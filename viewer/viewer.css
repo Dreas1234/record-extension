@@ -1,0 +1,283 @@
+/* ── Reset & base ───────────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --c-bg: #0f172a;
+  --c-surface: #1e293b;
+  --c-border: #334155;
+  --c-text: #e2e8f0;
+  --c-muted: #94a3b8;
+  --c-accent: #3b82f6;
+  --c-danger: #ef4444;
+  --c-success: #22c55e;
+  --c-warning: #f59e0b;
+  --radius: 10px;
+  --radius-sm: 6px;
+
+  /* Speaker colors (up to 8) */
+  --spk-0: #3b82f6;
+  --spk-1: #a855f7;
+  --spk-2: #22c55e;
+  --spk-3: #f97316;
+  --spk-4: #ec4899;
+  --spk-5: #14b8a6;
+  --spk-6: #eab308;
+  --spk-7: #ef4444;
+}
+
+html, body {
+  height: 100%;
+  background: var(--c-bg);
+  color: var(--c-text);
+  font-family: system-ui, -apple-system, sans-serif;
+  font-size: 15px;
+  line-height: 1.6;
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+/* ── Header ─────────────────────────────────────────────────────────────────── */
+.viewer-header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 24px;
+  background: var(--c-bg);
+  border-bottom: 1px solid var(--c-border);
+  gap: 16px;
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-width: 0;
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+  font-size: 15px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.logo-dot {
+  width: 10px;
+  height: 10px;
+  background: var(--c-accent);
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.header-divider {
+  width: 1px;
+  height: 20px;
+  background: var(--c-border);
+  flex-shrink: 0;
+}
+
+.recording-meta {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  min-width: 0;
+}
+
+.recording-title {
+  font-weight: 600;
+  font-size: 15px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.recording-info {
+  font-size: 13px;
+  color: var(--c-muted);
+  white-space: nowrap;
+}
+
+.header-right {
+  flex-shrink: 0;
+}
+
+/* ── Status badge ────────────────────────────────────────────────────────────── */
+.status-badge {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  color: var(--c-muted);
+}
+
+.status-badge.status-transcribed {
+  background: color-mix(in srgb, var(--c-success) 15%, transparent);
+  border-color: color-mix(in srgb, var(--c-success) 40%, transparent);
+  color: var(--c-success);
+}
+
+.status-badge.status-processing {
+  background: color-mix(in srgb, var(--c-warning) 15%, transparent);
+  border-color: color-mix(in srgb, var(--c-warning) 40%, transparent);
+  color: var(--c-warning);
+}
+
+.status-badge.status-recording {
+  background: color-mix(in srgb, var(--c-danger) 15%, transparent);
+  border-color: color-mix(in srgb, var(--c-danger) 40%, transparent);
+  color: var(--c-danger);
+}
+
+/* ── Main content ────────────────────────────────────────────────────────────── */
+#transcript-container {
+  flex: 1;
+  padding: 32px 24px;
+  max-width: 860px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+/* ── Center messages (loading / error / empty) ───────────────────────────────── */
+.center-message {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 80px 0;
+  color: var(--c-muted);
+  text-align: center;
+}
+
+.error-icon { font-size: 28px; color: var(--c-warning); }
+
+.no-transcript-title { font-size: 16px; font-weight: 600; color: var(--c-text); }
+.muted { color: var(--c-muted); font-size: 14px; }
+
+/* Simple spinner */
+.spinner {
+  display: inline-block;
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--c-border);
+  border-top-color: var(--c-accent);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── Transcript body ─────────────────────────────────────────────────────────── */
+#transcript-body {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+/* ── Turn (one speaker's consecutive block) ──────────────────────────────────── */
+.turn {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.turn-header {
+  margin-bottom: 4px;
+}
+
+/* Speaker label button */
+.speaker-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: none;
+  padding: 3px 0;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  transition: opacity 0.15s;
+  /* color set per-speaker via JS inline style */
+}
+.speaker-label:hover { opacity: 0.75; }
+.speaker-label::after {
+  content: "✎";
+  font-size: 11px;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.speaker-label:hover::after { opacity: 1; }
+
+/* Inline rename input */
+.speaker-rename-input {
+  background: var(--c-surface);
+  border: 1px solid var(--c-accent);
+  border-radius: var(--radius-sm);
+  color: var(--c-text);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  outline: none;
+  width: 200px;
+}
+
+/* ── Segment ─────────────────────────────────────────────────────────────────── */
+.segment {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 5px 8px;
+  border-radius: var(--radius-sm);
+  transition: background 0.1s;
+}
+.segment:hover { background: var(--c-surface); }
+
+.segment-time {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--c-muted);
+  font-variant-numeric: tabular-nums;
+  min-width: 40px;
+}
+
+.segment-text {
+  color: var(--c-text);
+  line-height: 1.6;
+}
+
+/* Low confidence highlight */
+.segment.low-confidence .segment-text {
+  color: color-mix(in srgb, var(--c-text) 75%, var(--c-warning));
+}
+.segment.low-confidence {
+  border-left: 2px solid color-mix(in srgb, var(--c-warning) 50%, transparent);
+  padding-left: 6px;
+}
+
+.conf-warning {
+  font-size: 11px;
+  color: var(--c-warning);
+  margin-left: 4px;
+  cursor: default;
+}
+
+/* ── Scrollbar ───────────────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--c-border); border-radius: 3px; }

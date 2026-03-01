@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MeetRecord</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <div class="app">
+
+    <!-- Header -->
+    <header class="header">
+      <div class="logo">
+        <span class="logo-dot"></span>
+        <span class="logo-text">MeetRecord</span>
+      </div>
+      <button class="icon-btn" id="settings-toggle" title="Settings" aria-label="Toggle settings">
+        &#9881;
+      </button>
+    </header>
+
+    <!-- Main panel -->
+    <main id="main-panel">
+
+      <!-- Status card -->
+      <div class="status-card" id="status-card">
+        <div class="status-indicator" id="status-indicator">
+          <span class="status-dot" id="status-dot"></span>
+          <span class="status-text" id="status-text">Not Recording</span>
+        </div>
+        <div class="timer" id="timer" hidden>00:00:00</div>
+        <div class="platform-badge" id="platform-badge" hidden></div>
+      </div>
+
+      <!-- Controls -->
+      <div class="controls">
+        <button class="btn btn-primary" id="btn-record">
+          <span class="btn-icon">&#9654;</span>
+          <span id="btn-record-label">Start Recording</span>
+        </button>
+        <div class="capture-mode-row">
+          <label class="toggle-label">
+            <input type="checkbox" id="desktop-capture-toggle" />
+            <span>Full screen (desktop capture)</span>
+          </label>
+        </div>
+      </div>
+
+      <!-- Recent recordings -->
+      <section class="recordings-section">
+        <h3 class="section-title">Recent Recordings</h3>
+        <div id="recordings-list" class="recordings-list">
+          <p class="empty-state">No recordings yet.</p>
+        </div>
+      </section>
+
+    </main>
+
+    <!-- Settings panel (hidden by default) -->
+    <aside id="settings-panel" class="settings-panel" hidden>
+      <h3 class="section-title">Settings</h3>
+
+      <label class="setting-row">
+        <span>Auto-record meetings</span>
+        <input type="checkbox" id="setting-auto-record" />
+      </label>
+
+      <label class="setting-row">
+        <span>Record tab audio</span>
+        <input type="checkbox" id="setting-record-audio" checked />
+      </label>
+
+      <label class="setting-row">
+        <span>Record video</span>
+        <input type="checkbox" id="setting-record-video" checked />
+      </label>
+
+      <label class="setting-row">
+        <span>Notify on start/stop</span>
+        <input type="checkbox" id="setting-notify" checked />
+      </label>
+
+      <div class="setting-row">
+        <span>Storage limit (MB)</span>
+        <input type="number" id="setting-storage-limit" value="500" min="100" max="5000" step="100" />
+      </div>
+
+      <div class="setting-row setting-row--col">
+        <span>Supabase URL</span>
+        <input type="url" id="setting-supabase-url" placeholder="https://xxxx.supabase.co" />
+      </div>
+
+      <div class="setting-row setting-row--col">
+        <span>Supabase Anon Key</span>
+        <input type="password" id="setting-supabase-key" placeholder="eyJ…" autocomplete="off" />
+      </div>
+
+      <button class="btn btn-secondary" id="btn-save-settings">Save Settings</button>
+    </aside>
+
+  </div>
+  <script src="popup.js" type="module"></script>
+</body>
+</html>

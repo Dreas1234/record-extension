@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Transcript Viewer — MeetRecord</title>
+  <link rel="stylesheet" href="viewer.css" />
+</head>
+<body>
+  <div class="app">
+
+    <header class="viewer-header">
+      <div class="header-left">
+        <div class="logo">
+          <span class="logo-dot"></span>
+          <span>MeetRecord</span>
+        </div>
+        <div class="header-divider"></div>
+        <div class="recording-meta">
+          <span class="recording-title" id="recording-title">Loading…</span>
+          <span class="recording-info" id="recording-info"></span>
+        </div>
+      </div>
+      <div class="header-right">
+        <span class="status-badge" id="status-badge" hidden></span>
+      </div>
+    </header>
+
+    <main id="transcript-container">
+      <div id="loading-state" class="center-message">
+        <span class="spinner"></span>
+        <span>Loading transcript…</span>
+      </div>
+
+      <div id="error-state" class="center-message" hidden>
+        <span class="error-icon">&#9888;</span>
+        <span id="error-text"></span>
+      </div>
+
+      <div id="no-transcript" class="center-message" hidden>
+        <p class="no-transcript-title">No transcript available yet.</p>
+        <p class="muted">Transcription may still be in progress. Check back in a moment.</p>
+      </div>
+
+      <div id="transcript-body" hidden></div>
+    </main>
+
+  </div>
+  <script src="viewer.js" type="module"></script>
+</body>
+</html>

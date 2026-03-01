@@ -1,0 +1,78 @@
+{
+  "manifest_version": 3,
+  "name": "MeetRecord - Meeting Recorder",
+  "version": "1.0.0",
+  "description": "Record, transcribe, and manage meetings across Google Meet, Zoom, and Microsoft Teams.",
+
+  "permissions": [
+    "tabCapture",
+    "desktopCapture",
+    "activeTab",
+    "storage",
+    "notifications",
+    "identity",
+    "offscreen",
+    "scripting",
+    "tabs",
+    "alarms"
+  ],
+
+  "host_permissions": [
+    "https://meet.google.com/*",
+    "https://*.zoom.us/*",
+    "https://teams.microsoft.com/*",
+    "https://teams.live.com/*",
+    "https://api.assemblyai.com/*",
+    "https://*.supabase.co/*"
+  ],
+
+  "optional_permissions": ["microphone", "camera"],
+
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    },
+    "default_title": "MeetRecord"
+  },
+
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+
+  "content_scripts": [
+    {
+      "matches": ["https://meet.google.com/*"],
+      "js": ["utils/helpers.js", "utils/platform-detector.js", "content-scripts/common.js", "content-scripts/meet.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://*.zoom.us/wc/*", "https://*.zoom.us/j/*"],
+      "js": ["utils/helpers.js", "utils/platform-detector.js", "content-scripts/common.js", "content-scripts/zoom.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://teams.microsoft.com/*", "https://teams.live.com/*"],
+      "js": ["utils/helpers.js", "utils/platform-detector.js", "content-scripts/common.js", "content-scripts/teams.js"],
+      "run_at": "document_idle"
+    }
+  ],
+
+  "web_accessible_resources": [
+    {
+      "resources": ["recorder/offscreen.html", "icons/*"],
+      "matches": ["<all_urls>"]
+    }
+  ]
+}
