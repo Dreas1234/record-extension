@@ -136,57 +136,8 @@ btnRecord.addEventListener('click', async () => {
       return;
     }
 
-    // Check if mic permission is already granted.
-    // If not, open a dedicated extension tab — a full Chrome tab (not a popup)
-    // is the only context where Chrome reliably shows the mic permission dialog
-    // for extensions. Wait for that tab to close, then re-check.
-    const perm = await navigator.permissions.query({ name: 'microphone' })
-      .catch(() => ({ state: 'prompt' }));
-
-    if (perm.state !== 'granted') {
-      const micTab = await chrome.tabs.create({
-        url: chrome.runtime.getURL('request-mic.html'),
-        active: true,
-      });
-
-      await new Promise((resolve) => {
-        function onRemoved(tabId) {
-          if (tabId === micTab.id) {
-            chrome.tabs.onRemoved.removeListener(onRemoved);
-            resolve();
-          }
-        }
-        chrome.tabs.onRemoved.addListener(onRemoved);
-      });
-
-      const retry = await navigator.permissions.query({ name: 'microphone' })
-        .catch(() => ({ state: 'denied' }));
-
-      if (retry.state !== 'granted') {
-        alert('Microphone permission is required. Please allow access and try again.');
-        btnRecord.disabled = false;
-        return;
-      }
-    }
-
-    let streamId;
-    try {
-      streamId = await new Promise((resolve, reject) => {
-        chrome.tabCapture.getMediaStreamId({ targetTabId: tab.id }, (id) => {
-          if (chrome.runtime.lastError) reject(new Error(chrome.runtime.lastError.message));
-          else resolve(id);
-        });
-      });
-    } catch (err) {
-      alert(`Failed to get tab stream: ${err.message}`);
-      btnRecord.disabled = false;
-      return;
-    }
-
     const result = await sendBg('START_RECORDING', {
       tabId: tab.id,
-      useDesktopCapture: false,
-      streamId,
       captureMic: true,
     });
 

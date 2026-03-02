@@ -10,7 +10,6 @@
     "storage",
     "notifications",
     "identity",
-    "offscreen",
     "scripting",
     "tabs",
     "alarms"
@@ -69,7 +68,7 @@
 
   "web_accessible_resources": [
     {
-      "resources": ["recorder/offscreen.html", "icons/*"],
+      "resources": ["icons/*"],
       "matches": ["<all_urls>"]
     }
   ]

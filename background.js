@@ -20,52 +20,54 @@ import { getSession } from './auth/cognito-client.js';
 
 const state = {
   recording: false,
-  recordingId: null,  // IndexedDB key for the in-progress recording
+  recordingId: null,   // IndexedDB key for the in-progress recording
   tabId: null,
   platform: null,
   startTime: null,
-  streamId: null,
-  offscreenReady: false,
+  recorderTabId: null, // hidden extension tab running offscreen.js
   meetingTitle: null,  // captured from content script MEETING_DETECTED
 };
 
-// ─── Offscreen Document ───────────────────────────────────────────────────────
+// ─── Recorder Tab ─────────────────────────────────────────────────────────────
 
-const OFFSCREEN_URL = chrome.runtime.getURL('recorder/offscreen.html');
-const OFFSCREEN_REASON = 'USER_MEDIA';
+const RECORDER_URL = chrome.runtime.getURL('recorder/recorder.html');
 
-async function ensureOffscreenDocument() {
-  const existing = await chrome.offscreen.hasDocument().catch(() => false);
-  if (!existing) {
-    await chrome.offscreen.createDocument({
-      url: OFFSCREEN_URL,
-      reasons: [OFFSCREEN_REASON],
-      justification: 'MediaRecorder needs a DOM context to capture and encode audio/video.',
-    });
-    state.offscreenReady = true;
+async function ensureRecorderTab() {
+  if (state.recorderTabId !== null) {
+    try {
+      await chrome.tabs.get(state.recorderTabId);
+      return; // tab still alive
+    } catch {
+      state.recorderTabId = null;
+    }
   }
+
+  const tab = await chrome.tabs.create({ url: RECORDER_URL, active: false, pinned: true });
+  state.recorderTabId = tab.id;
+
+  // Wait for the page to finish loading so offscreen.js registers its listener
+  await new Promise((resolve) => {
+    if (tab.status === 'complete') { resolve(); return; }
+    function onUpdated(updatedTabId, changeInfo) {
+      if (updatedTabId === tab.id && changeInfo.status === 'complete') {
+        chrome.tabs.onUpdated.removeListener(onUpdated);
+        resolve();
+      }
+    }
+    chrome.tabs.onUpdated.addListener(onUpdated);
+  });
 }
 
-async function closeOffscreenDocument() {
-  const exists = await chrome.offscreen.hasDocument().catch(() => false);
-  if (exists) {
-    await chrome.offscreen.closeDocument();
-    state.offscreenReady = false;
+async function closeRecorderTab() {
+  if (state.recorderTabId !== null) {
+    await chrome.tabs.remove(state.recorderTabId).catch(() => {});
+    state.recorderTabId = null;
   }
 }
 
 // ─── Recording Control ────────────────────────────────────────────────────────
 
-function getTabStreamId(tabId) {
-  return new Promise((resolve, reject) => {
-    chrome.tabCapture.getMediaStreamId({ targetTabId: tabId }, (id) => {
-      if (chrome.runtime.lastError) reject(new Error(chrome.runtime.lastError.message));
-      else resolve(id);
-    });
-  });
-}
-
-async function startRecording({ tabId, streamId, captureMic = false }) {
+async function startRecording({ tabId, captureMic = false }) {
   if (state.recording) {
     return { success: false, error: 'Already recording' };
   }
@@ -74,22 +76,19 @@ async function startRecording({ tabId, streamId, captureMic = false }) {
     const tab = await chrome.tabs.get(tabId);
     const platform = detectPlatformFromUrl(tab.url);
 
-    // streamId is always provided by the popup; fall back for auto-record paths.
-    const captureStreamId = streamId ?? await getTabStreamId(tabId);
+    await ensureRecorderTab();
 
-    await ensureOffscreenDocument();
-
-    const { recordAudio = true, recordVideo = true } = await chrome.storage.local.get({
-      recordAudio: true,
-      recordVideo: true,
+    const captureStreamId = await new Promise((resolve, reject) => {
+      chrome.tabCapture.getMediaStreamId({ targetTabId: tabId }, (id) => {
+        if (chrome.runtime.lastError) reject(new Error(chrome.runtime.lastError.message));
+        else resolve(id);
+      });
     });
 
-    const response = await chrome.runtime.sendMessage({
+    console.log('[BG] sending streamId to recorder tab:', captureStreamId);
+    const response = await chrome.tabs.sendMessage(state.recorderTabId, {
       type: 'OFFSCREEN_START_RECORDING',
       streamId: captureStreamId,
-      captureMode: 'tab',
-      recordAudio,
-      recordVideo,
       captureMic,
     });
 
@@ -102,7 +101,6 @@ async function startRecording({ tabId, streamId, captureMic = false }) {
     state.tabId = tabId;
     state.platform = platform;
     state.startTime = Date.now();
-    state.streamId = captureStreamId;
 
     await chrome.storage.session.set({ recordingState: serializeState() });
 
@@ -127,8 +125,8 @@ async function stopRecording() {
   const duration = Date.now() - startTime;
 
   try {
-    // Tell the offscreen recorder to stop; it returns the raw ArrayBuffer
-    const offscreenResponse = await chrome.runtime.sendMessage({ type: 'OFFSCREEN_STOP_RECORDING' });
+    // Tell the recorder tab to stop; it returns the raw ArrayBuffer
+    const offscreenResponse = await chrome.tabs.sendMessage(state.recorderTabId, { type: 'OFFSCREEN_STOP_RECORDING' });
 
     // Reset recording state immediately so the UI unlocks
     state.recording = false;
@@ -136,10 +134,9 @@ async function stopRecording() {
     state.tabId = null;
     state.platform = null;
     state.startTime = null;
-    state.streamId = null;
 
     await chrome.storage.session.set({ recordingState: serializeState() });
-    await closeOffscreenDocument();
+    await closeRecorderTab();
 
     chrome.action.setBadgeText({ text: '' });
     if (tabId) {
@@ -407,7 +404,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   if (type === 'START_RECORDING') {
     const tabId = message.tabId || sender.tab?.id;
-    startRecording({ tabId, streamId: message.streamId, captureMic: message.captureMic }).then(sendResponse);
+    startRecording({ tabId, captureMic: message.captureMic }).then(sendResponse);
     return true;
   }
 
@@ -453,7 +450,7 @@ async function handleMeetingDetected(tab, { platform, meetingTitle, autoRecord }
   const settings = await chrome.storage.local.get({ autoRecord: false });
   if (!settings.autoRecord) return;
 
-  const result = await startRecording({ tabId: tab.id, streamId: null, captureMic: true });
+  const result = await startRecording({ tabId: tab.id, captureMic: true });
   if (result.success) {
     chrome.notifications.create({
       type: 'basic',
@@ -467,6 +464,9 @@ async function handleMeetingDetected(tab, { platform, meetingTitle, autoRecord }
 // ─── Tab listeners ────────────────────────────────────────────────────────────
 
 chrome.tabs.onRemoved.addListener((tabId) => {
+  if (tabId === state.recorderTabId) {
+    state.recorderTabId = null;
+  }
   if (state.recording && state.tabId === tabId) {
     stopRecording();
   }
@@ -478,6 +478,17 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
       stopRecording();
     }
   }
+});
+
+// ─── First-run mic setup ──────────────────────────────────────────────────────
+
+chrome.runtime.onInstalled.addListener(({ reason }) => {
+  if (reason !== 'install') return;
+  chrome.storage.local.get({ micPermissionGranted: false }, ({ micPermissionGranted }) => {
+    if (!micPermissionGranted) {
+      chrome.tabs.create({ url: chrome.runtime.getURL('micsetup.html'), active: true });
+    }
+  });
 });
 
 // ─── Startup — restore state after SW restart ─────────────────────────────────
