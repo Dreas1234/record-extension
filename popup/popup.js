@@ -151,12 +151,69 @@ btnRecord.addEventListener('click', async () => {
   btnRecord.disabled = false;
 });
 
+// ─── Settings panel ───────────────────────────────────────────────────────────
+
+const btnSettings       = document.getElementById('btn-settings');
+const settingsPanel     = document.getElementById('settings-panel');
+const inputApiKey       = document.getElementById('input-api-key');
+const inputS3Bucket     = document.getElementById('input-s3-bucket');
+const inputAwsRegion    = document.getElementById('input-aws-region');
+const inputUserPoolId   = document.getElementById('input-user-pool-id');
+const inputIdentityPool = document.getElementById('input-identity-pool-id');
+const inputClientId     = document.getElementById('input-client-id');
+const btnSave           = document.getElementById('btn-save-settings');
+const settingsHint      = document.getElementById('settings-hint');
+
+btnSettings.addEventListener('click', () => {
+  const isOpen = settingsPanel.classList.toggle('open');
+  btnSettings.classList.toggle('active', isOpen);
+  document.querySelector('main').classList.toggle('hidden', isOpen);
+});
+
+btnSave.addEventListener('click', async () => {
+  await chrome.storage.local.set({
+    assemblyAiApiKey:      inputApiKey.value.trim(),
+    s3Bucket:              inputS3Bucket.value.trim(),
+    cognitoRegion:         inputAwsRegion.value.trim(),
+    cognitoUserPoolId:     inputUserPoolId.value.trim(),
+    cognitoIdentityPoolId: inputIdentityPool.value.trim(),
+    cognitoClientId:       inputClientId.value.trim(),
+  });
+  settingsHint.textContent = 'Saved.';
+  settingsHint.className = 'settings-hint ok';
+  setTimeout(() => { settingsHint.textContent = ''; settingsHint.className = 'settings-hint'; }, 2000);
+});
+
+async function loadSettings() {
+  const vals = await chrome.storage.local.get({
+    assemblyAiApiKey:      '',
+    s3Bucket:              '',
+    cognitoRegion:         '',
+    cognitoUserPoolId:     '',
+    cognitoIdentityPoolId: '',
+    cognitoClientId:       '',
+  });
+  inputApiKey.value       = vals.assemblyAiApiKey;
+  inputS3Bucket.value     = vals.s3Bucket;
+  inputAwsRegion.value    = vals.cognitoRegion;
+  inputUserPoolId.value   = vals.cognitoUserPoolId;
+  inputIdentityPool.value = vals.cognitoIdentityPoolId;
+  inputClientId.value     = vals.cognitoClientId;
+}
+
+// ─── Dashboard link ───────────────────────────────────────────────────────────
+
+document.getElementById('btn-dashboard').addEventListener('click', () => {
+  chrome.tabs.create({ url: chrome.runtime.getURL('dashboard/dashboard.html') });
+});
+
 // ─── Init ─────────────────────────────────────────────────────────────────────
 
 async function init() {
   const state = await sendBg('GET_STATE');
   applyRecordingState(state ?? {});
   renderRecordings();
+  loadSettings();
 }
 
 init();

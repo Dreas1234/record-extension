@@ -9,81 +9,96 @@
 <body>
 <div class="app">
 
-  <!-- Nav -->
+  <!-- ── Nav ────────────────────────────────────────────────────────────────── -->
   <nav class="topnav">
-    <div class="topnav-left">
+    <div class="nav-left">
       <div class="logo">
         <span class="logo-dot"></span>
         MeetRecord
       </div>
-      <span style="font-size:13px;color:var(--c-muted);border-left:1px solid var(--c-border);padding-left:14px;">
-        Interview Recordings
-      </span>
+      <button id="btn-back" class="btn btn-ghost hidden">&#8592; All Recordings</button>
     </div>
-    <div class="topnav-right">
+    <div class="nav-center" id="nav-center">
+      <div class="search-wrap">
+        <span class="icon">&#128269;</span>
+        <input class="search-input" type="search" id="search"
+               placeholder="Search by candidate or recorder…" autocomplete="off" />
+      </div>
+    </div>
+    <div class="nav-right">
       <span class="user-chip" id="user-chip"></span>
       <button class="btn btn-ghost" id="logout-btn">Sign out</button>
     </div>
   </nav>
 
-  <!-- Body -->
-  <div class="page-body">
+  <!-- ── List view ──────────────────────────────────────────────────────────── -->
+  <div id="list-view" class="page-body">
 
-    <div class="section-header">
-      <h1 class="section-title" id="count-label">Recordings</h1>
-      <div class="search-wrap">
-        <span class="icon">&#128269;</span>
-        <input class="search-input" type="search" id="search"
-               placeholder="Search by candidate or date…" autocomplete="off" />
-      </div>
+    <div class="list-toolbar">
+      <h1 class="list-title" id="count-label">Recordings</h1>
     </div>
 
-    <!-- Loading -->
-    <div class="center-msg" id="loading">
-      <span class="spinner"></span>
-      <span>Loading recordings from S3…</span>
-    </div>
-
-    <!-- Error -->
     <div class="alert alert-error hidden" id="error-msg" style="margin-bottom:16px;"></div>
 
-    <!-- Empty -->
-    <div class="center-msg hidden" id="empty-msg">
-      <p class="title">No recordings yet.</p>
-      <p class="sub">Recordings appear here after employees upload them via the Chrome extension.</p>
-    </div>
+    <p class="no-results hidden" id="no-results">No results for that search.</p>
 
-    <!-- No results -->
-    <div class="center-msg hidden" id="no-results">
-      <p class="title">No results.</p>
-      <p class="sub">Try a different search term.</p>
-    </div>
-
-    <!-- Table -->
-    <div class="table-wrap hidden" id="table-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th>Candidate / Label</th>
-            <th>Date</th>
-            <th>Duration</th>
-            <th>Recorded by</th>
-            <th>Status</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody id="table-body"></tbody>
-      </table>
-    </div>
+    <div id="cards-list" class="cards-list"></div>
 
   </div>
+
+  <!-- ── Transcript view ────────────────────────────────────────────────────── -->
+  <div id="transcript-view" class="page-body hidden">
+
+    <div class="center-msg" id="tx-loading">
+      <span class="spinner"></span>
+      <span>Loading transcript…</span>
+    </div>
+
+    <div class="alert alert-error hidden" id="tx-error" style="margin-bottom:16px;"></div>
+
+    <div id="tx-content" class="hidden">
+
+      <!-- Meta card -->
+      <div class="transcript-meta">
+        <div>
+          <div class="meta-title" id="meta-title"></div>
+          <div class="meta-row" id="meta-row"></div>
+        </div>
+        <button class="btn btn-primary copy-btn" id="copy-btn">
+          &#128203; Copy for AI
+        </button>
+      </div>
+
+      <!-- Speaker label editor -->
+      <div class="speaker-editor" id="speaker-editor">
+        <div class="speaker-editor-header">
+          <div class="speaker-editor-title">Speaker Labels</div>
+          <div class="speaker-editor-hint">Rename speakers to real names. Labels are saved and used in AI export.</div>
+        </div>
+        <div class="speaker-inputs" id="speaker-inputs"></div>
+        <div class="speaker-editor-footer">
+          <button class="btn btn-primary" id="save-labels-btn">Save Labels</button>
+          <span class="save-status hidden" id="save-status"></span>
+        </div>
+      </div>
+
+      <!-- Transcript body -->
+      <div class="transcript-box">
+        <pre class="transcript-header-text" id="transcript-header-text"></pre>
+        <div id="utterances"></div>
+      </div>
+
+    </div>
+  </div>
+
 </div>
 
 <script type="module">
-import { requireAuth, signOut } from './auth.js';
-import { loadAllTranscripts }   from './aws.js';
+import { requireAuth, signOut }                              from './auth.js';
+import { getAWSCredentials, loadAllTranscripts,
+         getTranscriptJson, putTranscriptJson }              from './aws.js';
 
-// ─── Auth guard ──────────────────────────────────────────────────────────────
+// ─── Auth guard ───────────────────────────────────────────────────────────────
 const session = await requireAuth();
 if (!session) throw new Error('Redirecting…');
 
@@ -93,37 +108,57 @@ document.getElementById('logout-btn').addEventListener('click', () => {
   location.href = 'index.html';
 });
 
-// ─── State ───────────────────────────────────────────────────────────────────
-let allRecordings = [];
-let searchQuery   = '';
-
-// ─── Helpers ─────────────────────────────────────────────────────────────────
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 function esc(str) {
   return String(str ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
-
 function formatDate(iso) {
   if (!iso) return '—';
-  const d = new Date(iso);
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
-
+function formatDateLong(iso) {
+  if (!iso) return '—';
+  return new Date(iso).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+}
 function formatDuration(ms) {
   if (!ms) return '—';
-  const s = Math.floor(ms / 1000);
-  const m = Math.floor(s / 60);
-  const h = Math.floor(m / 60);
-  if (h > 0) return `${h}h ${m % 60}m`;
-  return `${m}m ${s % 60}s`;
+  const s = Math.floor(ms / 1000), m = Math.floor(s / 60), h = Math.floor(m / 60);
+  return h > 0 ? `${h}h ${m % 60}m` : `${m}m ${s % 60}s`;
+}
+function fmtMs(ms) {
+  const s = Math.floor(ms / 1000), m = Math.floor(s / 60), h = Math.floor(m / 60);
+  return h > 0
+    ? `${String(h).padStart(2,'0')}:${String(m%60).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`
+    : `${String(m).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;
 }
 
-function statusBadge(rec) {
-  const hasTranscript = rec.segments?.length > 0;
-  if (hasTranscript) return '<span class="badge badge-green">Transcribed</span>';
-  return '<span class="badge badge-gray">No transcript</span>';
+// ─── View switching ───────────────────────────────────────────────────────────
+const listView       = document.getElementById('list-view');
+const transcriptView = document.getElementById('transcript-view');
+const btnBack        = document.getElementById('btn-back');
+const navCenter      = document.getElementById('nav-center');
+
+function showList() {
+  transcriptView.classList.add('hidden');
+  listView.classList.remove('hidden');
+  btnBack.classList.add('hidden');
+  navCenter.classList.remove('hidden');
+  document.title = 'Recordings — MeetRecord';
 }
 
-// ─── Render ───────────────────────────────────────────────────────────────────
+function showTranscript() {
+  listView.classList.add('hidden');
+  transcriptView.classList.remove('hidden');
+  btnBack.classList.remove('hidden');
+  navCenter.classList.add('hidden');
+}
+
+btnBack.addEventListener('click', showList);
+
+// ─── List view ────────────────────────────────────────────────────────────────
+let allRecordings = [];
+let searchQuery   = '';
+
 function getFiltered() {
   if (!searchQuery) return allRecordings;
   const q = searchQuery.toLowerCase();
@@ -132,91 +167,237 @@ function getFiltered() {
   );
 }
 
-function render() {
+function renderList() {
   const filtered = getFiltered();
-  const loadingEl  = document.getElementById('loading');
-  const emptyEl    = document.getElementById('empty-msg');
-  const noResultEl = document.getElementById('no-results');
-  const tableWrap  = document.getElementById('table-wrap');
-  const countLabel = document.getElementById('count-label');
+  const total    = allRecordings.length;
 
-  loadingEl.classList.add('hidden');
-
-  const total = allRecordings.length;
-  countLabel.textContent = filtered.length === total
+  document.getElementById('count-label').textContent = filtered.length === total
     ? `Recordings (${total})`
     : `Recordings (${filtered.length} of ${total})`;
 
-  if (total === 0) {
-    emptyEl.classList.remove('hidden');
-    noResultEl.classList.add('hidden');
-    tableWrap.classList.add('hidden');
-    return;
-  }
+  document.getElementById('no-results').classList.toggle('hidden', !(total > 0 && filtered.length === 0));
 
-  emptyEl.classList.add('hidden');
-
-  if (filtered.length === 0) {
-    noResultEl.classList.remove('hidden');
-    tableWrap.classList.add('hidden');
-    return;
-  }
-
-  noResultEl.classList.add('hidden');
-  tableWrap.classList.remove('hidden');
-
-  document.getElementById('table-body').innerHTML = filtered.map(r => {
-    const label    = r.label || r.meetingTitle || r.recordingId || 'Untitled';
-    const subtitle = r.meetingTitle && r.meetingTitle !== label ? r.meetingTitle : '';
-    const hasT     = r.segments?.length > 0;
+  document.getElementById('cards-list').innerHTML = filtered.map(r => {
+    const label  = r.label || r.meetingTitle || r.recordingId || 'Untitled';
+    const hasT   = r.segments?.length > 0;
+    const pill   = hasT
+      ? '<span class="pill pill-green">Transcribed</span>'
+      : '<span class="pill pill-gray">Processing</span>';
+    const viewBtn = hasT
+      ? `<button class="btn-view" data-action="view" data-id="${esc(r.recordingId)}">View Transcript</button>`
+      : '';
     return `
-      <tr data-id="${esc(r.recordingId)}">
-        <td>
-          <div class="td-label">${esc(label)}</div>
-          ${subtitle ? `<div class="td-sub">${esc(subtitle)}</div>` : ''}
-        </td>
-        <td class="td-muted">${formatDate(r.date)}</td>
-        <td class="td-muted">${formatDuration(r.duration)}</td>
-        <td class="td-muted">${esc(r.uploadedBy || r.userId || '—')}</td>
-        <td>${statusBadge(r)}</td>
-        <td>
-          <a class="action-link ${!hasT ? 'action-link--disabled' : ''}"
-             href="transcript.html?id=${esc(r.recordingId)}"
-             ${!hasT ? 'aria-disabled="true" tabindex="-1"' : ''}
-             title="${!hasT ? 'No transcript available' : 'View transcript'}">
-            &#128065; View
-          </a>
-        </td>
-      </tr>`;
+      <div class="rec-card">
+        <div class="rec-info">
+          <div class="rec-name">${esc(label)}</div>
+          <div class="rec-meta">${formatDate(r.date)} · ${formatDuration(r.duration)} · ${esc(r.uploadedBy || r.userId || '—')}</div>
+        </div>
+        <div class="rec-actions">
+          ${pill}
+          ${viewBtn}
+          <button class="btn-del" data-action="delete" data-id="${esc(r.recordingId)}">Delete</button>
+        </div>
+      </div>`;
   }).join('');
 }
 
-// Row click → navigate to transcript (unless clicking the link directly)
-document.getElementById('table-body').addEventListener('click', (e) => {
-  if (e.target.closest('a')) return;
-  const row = e.target.closest('tr[data-id]');
-  if (!row) return;
-  const id = row.dataset.id;
-  const rec = allRecordings.find(r => r.recordingId === id);
-  if (rec?.segments?.length) location.href = `transcript.html?id=${encodeURIComponent(id)}`;
+document.getElementById('cards-list').addEventListener('click', (e) => {
+  const btn = e.target.closest('[data-action]');
+  if (!btn) return;
+  const { action, id } = btn.dataset;
+
+  if (action === 'view') {
+    openTranscript(id);
+  } else if (action === 'delete') {
+    if (!confirm('Remove this recording from the list?')) return;
+    allRecordings = allRecordings.filter(r => r.recordingId !== id);
+    renderList();
+  }
 });
 
-// Search
 document.getElementById('search').addEventListener('input', (e) => {
   searchQuery = e.target.value.trim();
-  render();
+  renderList();
 });
 
-// ─── Load recordings from S3 ─────────────────────────────────────────────────
+// ─── Transcript helpers ───────────────────────────────────────────────────────
+function sortedSpeakers(segments) {
+  return [...new Set((segments ?? []).map(s => s.speaker))].sort();
+}
+
+function resolveSpeakerNames(rec) {
+  if (rec.speakerNames && Object.keys(rec.speakerNames).length > 0) return { ...rec.speakerNames };
+  const defaults = {};
+  sortedSpeakers(rec.segments).forEach((sp, i) => {
+    defaults[sp] = i === 0 ? 'Interviewer' : i === 1 ? 'Candidate' : sp;
+  });
+  return defaults;
+}
+
+function speakerClass(speaker, speakers) {
+  const idx = speakers.indexOf(speaker);
+  return idx === 0 ? 'interviewer' : idx === 1 ? 'candidate' : '';
+}
+
+function buildAIText(rec, names) {
+  const label = rec.label || rec.meetingTitle || 'Unknown Candidate';
+  const date  = rec.date
+    ? new Date(rec.date).toLocaleDateString('en-US', { month:'long', day:'numeric', year:'numeric' })
+    : '—';
+  const header = [
+    'INTERVIEW TRANSCRIPT',
+    `Candidate: ${label}`,
+    `Date: ${date}`,
+    `Duration: ${formatDuration(rec.duration)}`,
+    `Recorded by: ${rec.uploadedBy || rec.userId || '—'}`,
+    '',
+  ].join('\n');
+  const body = (rec.segments ?? [])
+    .map(seg => `[${fmtMs(seg.start)}] ${names[seg.speaker] ?? seg.speaker}: ${seg.text}`)
+    .join('\n');
+  return `${header}\n${body}\n\n---\n\nPlease analyze this interview transcript and provide:\n1) Overall candidate score out of 10\n2) Key strengths observed\n3) Areas of concern\n4) Hiring recommendation`;
+}
+
+function renderTranscript(rec, names, speakers) {
+  const label = rec.label || rec.meetingTitle || 'Untitled Interview';
+  document.getElementById('transcript-header-text').textContent = [
+    'INTERVIEW TRANSCRIPT',
+    `Candidate: ${label}`,
+    `Date: ${rec.date ? new Date(rec.date).toLocaleDateString('en-US', { month:'long', day:'numeric', year:'numeric' }) : '—'}`,
+    `Duration: ${formatDuration(rec.duration)}`,
+    `Recorded by: ${rec.uploadedBy || rec.userId || '—'}`,
+  ].join('\n');
+
+  const uttEl = document.getElementById('utterances');
+  if (!rec.segments?.length) {
+    uttEl.innerHTML = '<p style="color:var(--c-muted);font-size:13px;margin-top:12px;">No transcript segments available.</p>';
+    return;
+  }
+  uttEl.innerHTML = rec.segments.map(seg => {
+    const name = names[seg.speaker] ?? seg.speaker;
+    const cls  = speakerClass(seg.speaker, speakers);
+    return `
+      <div class="utterance">
+        <span class="utt-time">[${fmtMs(seg.start)}]</span>
+        <span class="utt-speaker ${cls}">${esc(name)}</span>
+        <span class="utt-text">${esc(seg.text)}</span>
+      </div>`;
+  }).join('');
+}
+
+function renderSpeakerEditor(names, speakers) {
+  document.getElementById('speaker-inputs').innerHTML = speakers.map((sp, i) => {
+    const dotClass = i === 0 ? 'dot-interviewer' : i === 1 ? 'dot-candidate' : 'dot-other';
+    return `
+      <div class="speaker-row">
+        <span class="speaker-dot ${dotClass}"></span>
+        <span class="speaker-raw">${esc(sp)}</span>
+        <span class="speaker-arrow">&#8594;</span>
+        <input class="field-input speaker-input"
+               type="text" data-speaker="${esc(sp)}"
+               value="${esc(names[sp] ?? sp)}"
+               placeholder="Name or role" maxlength="60" />
+      </div>`;
+  }).join('');
+}
+
+// ─── Open transcript ──────────────────────────────────────────────────────────
+let _rec, _credentials, _speakerNames, _speakers;
+
+async function openTranscript(recordingId) {
+  showTranscript();
+  document.getElementById('tx-loading').classList.remove('hidden');
+  document.getElementById('tx-error').classList.add('hidden');
+  document.getElementById('tx-content').classList.add('hidden');
+
+  try {
+    _credentials  = await getAWSCredentials(session.idToken);
+    _rec          = await getTranscriptJson(_credentials, `transcripts/${recordingId}.json`);
+    _speakerNames = resolveSpeakerNames(_rec);
+    _speakers     = sortedSpeakers(_rec.segments);
+
+    const label = _rec.label || _rec.meetingTitle || 'Untitled Interview';
+    document.title = `${label} — MeetRecord`;
+    document.getElementById('meta-title').textContent = label;
+    document.getElementById('meta-row').innerHTML =
+      [formatDateLong(_rec.date), formatDuration(_rec.duration),
+       `Recorded by ${esc(_rec.uploadedBy || _rec.userId || '—')}`]
+      .map(s => `<span>${s}</span>`).join('<span class="meta-sep">·</span>');
+
+    if (_speakers.length > 0) {
+      renderSpeakerEditor(_speakerNames, _speakers);
+      document.getElementById('speaker-editor').classList.remove('hidden');
+    } else {
+      document.getElementById('speaker-editor').classList.add('hidden');
+    }
+
+    renderTranscript(_rec, _speakerNames, _speakers);
+
+    document.getElementById('tx-loading').classList.add('hidden');
+    document.getElementById('tx-content').classList.remove('hidden');
+
+  } catch (err) {
+    document.getElementById('tx-loading').classList.add('hidden');
+    const errEl = document.getElementById('tx-error');
+    errEl.textContent = `Failed to load transcript: ${err.message}`;
+    errEl.classList.remove('hidden');
+    console.error('[dashboard] openTranscript:', err);
+  }
+}
+
+// ─── Save labels ──────────────────────────────────────────────────────────────
+document.getElementById('save-labels-btn').addEventListener('click', async () => {
+  const saveBtn  = document.getElementById('save-labels-btn');
+  const statusEl = document.getElementById('save-status');
+
+  const newNames = {};
+  document.querySelectorAll('.speaker-input').forEach(input => {
+    newNames[input.dataset.speaker] = input.value.trim() || input.dataset.speaker;
+  });
+
+  saveBtn.disabled = true;
+  saveBtn.textContent = 'Saving…';
+  statusEl.className = 'save-status hidden';
+
+  try {
+    const updated = { ..._rec, speakerNames: newNames };
+    await putTranscriptJson(_credentials, _rec.recordingId, updated);
+    _rec          = updated;
+    _speakerNames = newNames;
+    renderTranscript(_rec, _speakerNames, _speakers);
+    statusEl.textContent = '✓ Saved';
+    statusEl.className   = 'save-status save-ok';
+    setTimeout(() => { statusEl.className = 'save-status hidden'; }, 3000);
+  } catch (err) {
+    statusEl.textContent = `Save failed: ${err.message}`;
+    statusEl.className   = 'save-status save-err';
+  } finally {
+    saveBtn.disabled = false;
+    saveBtn.textContent = 'Save Labels';
+  }
+});
+
+// ─── Copy for AI ──────────────────────────────────────────────────────────────
+document.getElementById('copy-btn').addEventListener('click', async (e) => {
+  const text = buildAIText(_rec, _speakerNames);
+  try {
+    await navigator.clipboard.writeText(text);
+    const btn = e.currentTarget, orig = btn.innerHTML;
+    btn.textContent = '✓ Copied!';
+    setTimeout(() => { btn.innerHTML = orig; }, 2000);
+  } catch {
+    prompt('Copy this text:', text);
+  }
+});
+
+// ─── Load recordings ──────────────────────────────────────────────────────────
 try {
   allRecordings = await loadAllTranscripts(session.idToken);
-  render();
+  renderList();
 } catch (err) {
-  document.getElementById('loading').classList.add('hidden');
   const errEl = document.getElementById('error-msg');
   errEl.textContent = `Failed to load recordings: ${err.message}`;
   errEl.classList.remove('hidden');
-  console.error('[dashboard]', err);
 }
 </script>
 </body>

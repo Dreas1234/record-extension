@@ -2,18 +2,20 @@
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
-  --c-bg: #0f172a;
-  --c-surface: #1e293b;
-  --c-surface-2: #263248;
-  --c-border: #334155;
-  --c-text: #e2e8f0;
-  --c-muted: #94a3b8;
+  --c-bg: #f5f6fa;
+  --c-surface: #ffffff;
+  --c-surface-2: #f8fafc;
+  --c-border: #e2e8f0;
+  --c-text: #1e293b;
+  --c-muted: #64748b;
   --c-accent: #3b82f6;
   --c-danger: #ef4444;
   --c-success: #22c55e;
   --c-warning: #f59e0b;
   --radius: 10px;
   --radius-sm: 6px;
+  --shadow: 0 1px 3px rgba(0,0,0,.08), 0 1px 2px rgba(0,0,0,.06);
+  --shadow-md: 0 4px 6px rgba(0,0,0,.07), 0 2px 4px rgba(0,0,0,.06);
 }
 
 html, body {
@@ -36,8 +38,9 @@ html, body {
   align-items: center;
   justify-content: space-between;
   padding: 12px 24px;
-  background: var(--c-bg);
+  background: var(--c-surface);
   border-bottom: 1px solid var(--c-border);
+  box-shadow: var(--shadow);
   gap: 16px;
 }
 
@@ -131,7 +134,7 @@ html, body {
 }
 .tag-chip:hover { border-color: var(--c-text); color: var(--c-text); }
 .tag-chip.active {
-  background: color-mix(in srgb, var(--c-accent) 20%, transparent);
+  background: #eff6ff;
   border-color: var(--c-accent);
   color: var(--c-accent);
 }
@@ -180,9 +183,10 @@ html, body {
   grid-template-columns: 1fr auto;
   gap: 16px;
   align-items: start;
-  transition: border-color 0.15s;
+  box-shadow: var(--shadow);
+  transition: border-color 0.15s, box-shadow 0.15s;
 }
-.rec-card:hover { border-color: #475569; }
+.rec-card:hover { border-color: #cbd5e1; box-shadow: var(--shadow-md); }
 
 /* Left column */
 .rec-info { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
@@ -310,12 +314,12 @@ html, body {
   font-weight: 600;
   white-space: nowrap;
 }
-.status-saved, .status-recording       { background: color-mix(in srgb, var(--c-muted) 15%, transparent);    border: 1px solid color-mix(in srgb, var(--c-muted) 30%, transparent);    color: var(--c-muted); }
+.status-saved, .status-recording       { background: #f8fafc; border: 1px solid #e2e8f0; color: #64748b; }
 .status-uploading, .status-transcribing,
-.status-processing                     { background: color-mix(in srgb, var(--c-warning) 15%, transparent);  border: 1px solid color-mix(in srgb, var(--c-warning) 40%, transparent); color: var(--c-warning); }
-.status-transcribed                    { background: color-mix(in srgb, var(--c-success) 15%, transparent);  border: 1px solid color-mix(in srgb, var(--c-success) 40%, transparent); color: var(--c-success); }
+.status-processing                     { background: #fffbeb; border: 1px solid #fde68a; color: #92400e; }
+.status-transcribed                    { background: #f0fdf4; border: 1px solid #bbf7d0; color: #15803d; }
 .status-transcription_failed,
-.status-no_api_key                     { background: color-mix(in srgb, var(--c-danger) 15%, transparent);   border: 1px solid color-mix(in srgb, var(--c-danger) 40%, transparent);  color: var(--c-danger); }
+.status-no_api_key                     { background: #fef2f2; border: 1px solid #fecaca; color: #dc2626; }
 
 /* Action buttons */
 .rec-actions { display: flex; flex-direction: column; gap: 6px; align-items: stretch; }
@@ -337,12 +341,12 @@ html, body {
   transition: all 0.15s;
   min-width: 130px;
 }
-.action-btn:hover { background: var(--c-surface-2); border-color: #475569; }
+.action-btn:hover { background: var(--c-surface-2); border-color: #cbd5e1; }
 .action-btn:disabled { opacity: 0.45; cursor: not-allowed; }
 .action-btn.danger { color: var(--c-danger); }
-.action-btn.danger:hover { border-color: var(--c-danger); background: color-mix(in srgb, var(--c-danger) 10%, transparent); }
+.action-btn.danger:hover { border-color: var(--c-danger); background: #fef2f2; }
 .action-btn.accent { color: var(--c-accent); }
-.action-btn.accent:hover { border-color: var(--c-accent); background: color-mix(in srgb, var(--c-accent) 10%, transparent); }
+.action-btn.accent:hover { border-color: var(--c-accent); background: #eff6ff; }
 
 /* ── Scrollbar ───────────────────────────────────────────────────────────────── */
 ::-webkit-scrollbar { width: 6px; }

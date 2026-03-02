@@ -140,6 +140,12 @@ a:hover { text-decoration: underline; }
   box-shadow: var(--shadow);
 }
 
+/* 3-column nav layout */
+.nav-left   { display: flex; align-items: center; gap: 16px; flex: 1; }
+.nav-center { display: flex; align-items: center; justify-content: center; flex: 0 1 380px; }
+.nav-right  { display: flex; align-items: center; gap: 10px; flex: 1; justify-content: flex-end; }
+
+/* Keep old names as aliases for backward compat */
 .topnav-left  { display: flex; align-items: center; gap: 16px; }
 .topnav-right { display: flex; align-items: center; gap: 10px; }
 
@@ -470,7 +476,112 @@ tbody tr:hover { background: #f8fafc; }
   margin: 16px 0;
 }
 
+/* ── Meta row separator ──────────────────────────────────────────────────────── */
+.meta-sep { margin: 0 6px; color: var(--c-border-2); }
+
+/* ── Muted / non-clickable table row ─────────────────────────────────────────── */
+tbody tr.row-muted { cursor: default; opacity: 0.6; }
+tbody tr.row-muted:hover { background: transparent; }
+
+/* ── List toolbar ────────────────────────────────────────────────────────────── */
+.list-toolbar { display: flex; align-items: center; margin-bottom: 20px; }
+.list-title   { font-size: 18px; font-weight: 700; }
+
+/* ── No results ──────────────────────────────────────────────────────────────── */
+.no-results { text-align: center; color: var(--c-muted); padding: 60px 0; font-size: 14px; }
+
+/* ── Recording cards ─────────────────────────────────────────────────────────── */
+.cards-list { display: flex; flex-direction: column; gap: 10px; }
+
+.rec-card {
+  background: #fff;
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius);
+  padding: 16px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  box-shadow: var(--shadow);
+  transition: box-shadow 0.15s;
+}
+.rec-card:hover { box-shadow: var(--shadow-md); }
+
+.rec-info { flex: 1; min-width: 0; }
+.rec-name {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--c-text);
+  margin-bottom: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.rec-meta { font-size: 13px; color: var(--c-muted); }
+
+.rec-actions { display: flex; align-items: center; gap: 14px; flex-shrink: 0; }
+
+/* ── Status pills ────────────────────────────────────────────────────────────── */
+.pill { display: inline-block; padding: 3px 10px; border-radius: 20px; font-size: 12px; font-weight: 600; }
+.pill-green { background: #f0fdf4; border: 1px solid #bbf7d0; color: #15803d; }
+.pill-gray  { background: #f8fafc; border: 1px solid #e2e8f0; color: #64748b; }
+
+/* ── Card action buttons ─────────────────────────────────────────────────────── */
+.btn-view {
+  background: none;
+  border: none;
+  color: var(--c-accent);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0;
+  white-space: nowrap;
+}
+.btn-view:hover { text-decoration: underline; }
+
+.btn-del {
+  background: none;
+  border: none;
+  color: var(--c-muted);
+  font-size: 13px;
+  cursor: pointer;
+  padding: 0;
+  white-space: nowrap;
+}
+.btn-del:hover { color: var(--c-danger); }
+
 /* ── Scrollbar ───────────────────────────────────────────────────────────────── */
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--c-border-2); border-radius: 3px; }
+
+/* ── Responsive ──────────────────────────────────────────────────────────────── */
+@media (max-width: 768px) {
+  .col-hide-md { display: none; }
+  .nav-center { display: none; }
+
+  .rec-card { flex-direction: column; align-items: flex-start; }
+  .rec-actions { width: 100%; justify-content: flex-start; flex-wrap: wrap; }
+}
+
+@media (max-width: 540px) {
+  .col-hide-sm { display: none; }
+
+  .page-body { padding: 16px; }
+
+  .section-header { flex-direction: column; align-items: flex-start; gap: 10px; }
+
+  .transcript-meta { grid-template-columns: 1fr; gap: 12px; }
+  .copy-btn { width: 100%; justify-content: center; }
+  .meta-row { flex-direction: column; gap: 2px; }
+  .meta-sep { display: none; }
+
+  .utterance { grid-template-columns: 48px 1fr; }
+  .utt-text  { grid-column: 1 / -1; padding-left: 48px; margin-top: -2px; }
+
+  .speaker-raw, .speaker-arrow { display: none; }
+  .speaker-row { gap: 8px; }
+
+  .topnav { padding: 0 16px; }
+  .user-chip { display: none; }
+}

@@ -12,9 +12,6 @@ import { formatDuration, formatTimestamp, formatBytes } from '../utils/helpers.j
 
 const searchInput    = document.getElementById('search-input');
 const tagBar         = document.getElementById('tag-bar');
-const loadingState   = document.getElementById('loading-state');
-const emptyState     = document.getElementById('empty-state');
-const noResults      = document.getElementById('no-results');
 const recordingsList = document.getElementById('recordings-list');
 const countEl        = document.getElementById('recording-count');
 
@@ -160,7 +157,7 @@ function recordingCardHtml(r) {
         <div class="rec-actions">
           <button class="action-btn accent" data-action="view" data-id="${r.id}"
                   ${!hasTranscript ? 'disabled title="No transcript yet"' : ''}>
-            &#128065; View Transcript
+            View Transcript
           </button>
           <button class="action-btn danger" data-action="delete" data-id="${r.id}">
             &#10005; Delete
@@ -177,15 +174,6 @@ function renderList() {
   const filtered = getFiltered();
 
   countEl.textContent = `${filtered.length} of ${allRecordings.length} recording${allRecordings.length !== 1 ? 's' : ''}`;
-
-  emptyState.toggleAttribute('hidden', allRecordings.length !== 0);
-  noResults.toggleAttribute('hidden', allRecordings.length === 0 || filtered.length !== 0);
-  recordingsList.toggleAttribute('hidden', filtered.length === 0);
-
-  if (!filtered.length) {
-    recordingsList.innerHTML = '';
-    return;
-  }
 
   recordingsList.innerHTML = filtered.map(recordingCardHtml).join('');
 }
@@ -334,7 +322,6 @@ searchInput.addEventListener('input', () => {
 
 async function init() {
   allRecordings = await getAllRecordings();
-  loadingState.setAttribute('hidden', '');
   render();
 }
 

@@ -218,7 +218,7 @@ async function triggerTranscription(recordingId, audioBuffer, mimeType) {
     const uploadUrl = await uploadAudio(audioBuffer, apiKey);
 
     // 2. Submit
-    await updateRecording(recordingId, { status: 'transcribing' });
+    await updateRecording(recordingId, { status: 'processing' });
     const transcriptId = await submitTranscriptionJob(uploadUrl, apiKey, { speakersExpected });
 
     // Store the transcript ID in the record so it survives a SW restart
@@ -248,7 +248,7 @@ async function registerPendingTranscription(transcriptId, recordingId) {
   const existing = await chrome.alarms.get(POLL_ALARM);
   if (!existing) {
     // 1-minute interval is the production minimum; works at lower values in development
-    chrome.alarms.create(POLL_ALARM, { periodInMinutes: 1 });
+    chrome.alarms.create(POLL_ALARM, { periodInMinutes: 0.25 });
   }
 }
 
@@ -305,13 +305,6 @@ async function pollPendingTranscriptions() {
         triggerS3Upload(job.recordingId).catch((err) =>
           console.error('[BG] triggerS3Upload error:', err)
         );
-
-        chrome.notifications.create({
-          type: 'basic',
-          iconUrl: 'icons/icon48.png',
-          title: 'Transcript Ready',
-          message: 'Your meeting transcript with speaker labels is ready. Uploading to cloud…',
-        });
 
       } else if (result.status === 'error') {
         await updateRecording(job.recordingId, {
@@ -374,6 +367,13 @@ async function triggerS3Upload(recordingId) {
     });
 
     console.log('[BG] S3 upload complete for', recordingId);
+
+    chrome.notifications.create({
+      type: 'basic',
+      iconUrl: 'icons/icon48.png',
+      title: 'Upload Complete',
+      message: 'Interview uploaded successfully.',
+    });
   } catch (err) {
     console.error('[BG] S3 upload failed for', recordingId, err);
     await updateRecording(recordingId, {

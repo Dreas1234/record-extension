@@ -17,6 +17,7 @@ let recordedChunks = [];
 let tabStream  = null;   // chromeMediaSource:'tab' stream
 let micStream  = null;   // microphone stream
 let audioCtx   = null;   // AudioContext used for mixing
+let monitorCtx = null;   // AudioContext used for speaker monitoring
 
 // ─── MIME type ────────────────────────────────────────────────────────────────
 
@@ -58,6 +59,11 @@ async function startRecording({ streamId, captureMic = false }) {
     // Video tracks were required to activate Chrome's audio pipeline but are
     // not recorded — stop them immediately to free the capture resource.
     tabStream.getVideoTracks().forEach((t) => t.stop());
+
+    // Play tab audio back through the speakers so the user can still hear the meeting.
+    monitorCtx = new AudioContext();
+    const source = monitorCtx.createMediaStreamSource(tabStream);
+    source.connect(monitorCtx.destination);
 
     recordedChunks = [];
 
@@ -166,9 +172,11 @@ function cleanup() {
   tabStream?.getTracks().forEach((t) => t.stop());
   micStream?.getTracks().forEach((t) => t.stop());
   audioCtx?.close();
+  monitorCtx?.close();
   tabStream      = null;
   micStream      = null;
   audioCtx       = null;
+  monitorCtx     = null;
   mediaRecorder  = null;
   recordedChunks = [];
 }

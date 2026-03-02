@@ -13,7 +13,45 @@
         <span class="logo-dot"></span>
         <span class="logo-text">MeetRecord</span>
       </div>
+      <button class="btn-icon-header" id="btn-settings" title="Settings">&#9881;</button>
     </header>
+
+    <div class="settings-panel" id="settings-panel">
+      <label class="settings-label" for="input-api-key">AssemblyAI API Key</label>
+      <div class="settings-row">
+        <input type="password" id="input-api-key" class="settings-input" placeholder="Paste your API key…" autocomplete="off" spellcheck="false" />
+      </div>
+
+      <label class="settings-label" for="input-s3-bucket">S3 Bucket Name</label>
+      <div class="settings-row">
+        <input type="text" id="input-s3-bucket" class="settings-input" placeholder="my-meetrecord-bucket" autocomplete="off" spellcheck="false" />
+      </div>
+
+      <label class="settings-label" for="input-aws-region">AWS Region</label>
+      <div class="settings-row">
+        <input type="text" id="input-aws-region" class="settings-input" placeholder="us-east-1" autocomplete="off" spellcheck="false" />
+      </div>
+
+      <label class="settings-label" for="input-user-pool-id">Cognito User Pool ID</label>
+      <div class="settings-row">
+        <input type="text" id="input-user-pool-id" class="settings-input" placeholder="us-east-1_XXXXXXXXX" autocomplete="off" spellcheck="false" />
+      </div>
+
+      <label class="settings-label" for="input-identity-pool-id">Cognito Identity Pool ID</label>
+      <div class="settings-row">
+        <input type="text" id="input-identity-pool-id" class="settings-input" placeholder="us-east-1:xxxxxxxx-xxxx-…" autocomplete="off" spellcheck="false" />
+      </div>
+
+      <label class="settings-label" for="input-client-id">Cognito App Client ID</label>
+      <div class="settings-row">
+        <input type="text" id="input-client-id" class="settings-input" placeholder="xxxxxxxxxxxxxxxxxxxxxxxxxx" autocomplete="off" spellcheck="false" />
+      </div>
+
+      <div class="settings-row">
+        <button class="btn btn-primary btn-save" id="btn-save-settings">Save</button>
+      </div>
+      <p class="settings-hint" id="settings-hint"></p>
+    </div>
 
     <main>
 
@@ -33,7 +71,10 @@
       </div>
 
       <section class="recordings-section">
-        <h3 class="section-title">Recordings</h3>
+        <div class="section-header">
+          <h3 class="section-title">Recordings</h3>
+          <button class="btn-link" id="btn-dashboard">View all →</button>
+        </div>
         <div id="recordings-list" class="recordings-list">
           <p class="empty-state">No recordings yet.</p>
         </div>
