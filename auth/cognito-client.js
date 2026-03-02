@@ -11,16 +11,17 @@ async function cognitoRequest(region, clientId, target, params) {
     method: 'POST',
     headers: {
       'Content-Type': 'application/x-amz-json-1.1',
-      'X-Amz-Target': `AmazonCognitoIdentityProviderService.${target}`,
+      'X-Amz-Target': `AWSCognitoIdentityProviderService.${target}`,
     },
-    body: JSON.stringify({ ...params, ClientId: clientId }),
+    body: JSON.stringify({ ClientId: clientId, ...params }),
   });
 
-  const body = await resp.json().catch(() => ({}));
-  if (!resp.ok) {
-    throw new Error(body.message || body.__type || `Cognito error ${resp.status}`);
-  }
-  return body;
+  const text = await resp.text();
+  console.log('Cognito response:', text);
+
+  if (!resp.ok) throw new Error(text);
+
+  return JSON.parse(text);
 }
 
 function decodeJwtPayload(token) {
@@ -57,9 +58,28 @@ export async function signIn(email, password) {
     AuthParameters: { USERNAME: email, PASSWORD: password },
   });
 
-  const { IdToken, AccessToken, RefreshToken, ExpiresIn } = data.AuthenticationResult;
+  console.log('[Cognito] full response:', JSON.stringify(data));
+
+  // Handle first-login password-change challenge (admin-created users).
+  let authResult = data.AuthenticationResult;
+  if (!authResult && data.ChallengeName === 'NEW_PASSWORD_REQUIRED') {
+    const challengeData = await cognitoRequest(cognitoRegion, cognitoClientId, 'RespondToAuthChallenge', {
+      ChallengeName: 'NEW_PASSWORD_REQUIRED',
+      ChallengeResponses: { USERNAME: email, NEW_PASSWORD: password },
+      Session: data.Session,
+    });
+    console.log('[Cognito] challenge response:', JSON.stringify(challengeData));
+    authResult = challengeData.AuthenticationResult;
+  }
+
+  if (!authResult) {
+    throw new Error(`Sign-in failed — no token returned. Full response: ${JSON.stringify(data)}`);
+  }
+
+  const { IdToken, AccessToken, RefreshToken, ExpiresIn } = authResult;
+
   const { displayName, username } = extractUserInfo(IdToken, email);
-  const expiry = Date.now() + ExpiresIn * 1000;
+  const expiry = Date.now() + (ExpiresIn ?? 3600) * 1000;
 
   await chrome.storage.local.set({
     cognitoIdToken:      IdToken,
@@ -89,65 +109,25 @@ export async function signOut() {
 // ─── Get current session ──────────────────────────────────────────────────────
 
 /**
- * Returns session object if logged in and token is valid, otherwise null.
- * Automatically refreshes an expired token if a refresh token exists.
+ * Returns session object if a token is stored, otherwise null.
+ * Does not check expiry — if the token is stale, API calls will fail
+ * and the user can re-login at that point.
  */
 export async function getSession() {
   const stored = await chrome.storage.local.get({
-    cognitoIdToken:      null,
-    cognitoAccessToken:  null,
-    cognitoRefreshToken: null,
-    cognitoExpiry:       0,
-    cognitoUsername:     null,
-    cognitoDisplayName:  null,
+    cognitoIdToken:     null,
+    cognitoAccessToken: null,
+    cognitoUsername:    null,
+    cognitoDisplayName: null,
   });
 
   if (!stored.cognitoIdToken) return null;
 
-  // Token still valid (5-minute safety buffer)
-  if (stored.cognitoExpiry > Date.now() + 5 * 60 * 1000) {
-    return {
-      idToken:     stored.cognitoIdToken,
-      accessToken: stored.cognitoAccessToken,
-      username:    stored.cognitoUsername,
-      displayName: stored.cognitoDisplayName,
-    };
-  }
-
-  // Try refreshing
-  if (stored.cognitoRefreshToken) {
-    try {
-      return await _refreshSession(stored.cognitoRefreshToken);
-    } catch {
-      // Refresh failed — treat as logged out
-    }
-  }
-
-  await signOut();
-  return null;
+  return {
+    idToken:     stored.cognitoIdToken,
+    accessToken: stored.cognitoAccessToken,
+    username:    stored.cognitoUsername,
+    displayName: stored.cognitoDisplayName,
+  };
 }
 
-// ─── Refresh (internal) ───────────────────────────────────────────────────────
-
-async function _refreshSession(refreshToken) {
-  const { cognitoRegion, cognitoClientId } = await getAuthConfig();
-
-  const data = await cognitoRequest(cognitoRegion, cognitoClientId, 'InitiateAuth', {
-    AuthFlow: 'REFRESH_TOKEN_AUTH',
-    AuthParameters: { REFRESH_TOKEN: refreshToken },
-  });
-
-  const { IdToken, AccessToken, ExpiresIn } = data.AuthenticationResult;
-  const { displayName, username } = extractUserInfo(IdToken, '');
-  const expiry = Date.now() + ExpiresIn * 1000;
-
-  await chrome.storage.local.set({
-    cognitoIdToken:     IdToken,
-    cognitoAccessToken: AccessToken,
-    cognitoExpiry:      expiry,
-    cognitoUsername:    username,
-    cognitoDisplayName: displayName,
-  });
-
-  return { idToken: IdToken, accessToken: AccessToken, username, displayName };
-}

@@ -13,10 +13,8 @@ import { getPlatformLabel } from '../utils/platform-detector.js';
 const titleEl        = document.getElementById('recording-title');
 const infoEl         = document.getElementById('recording-info');
 const statusBadge    = document.getElementById('status-badge');
-const loadingState   = document.getElementById('loading-state');
 const errorState     = document.getElementById('error-state');
 const errorText      = document.getElementById('error-text');
-const noTranscript   = document.getElementById('no-transcript');
 const transcriptBody = document.getElementById('transcript-body');
 const exportToolbar  = document.getElementById('export-toolbar');
 const btnExportPdf   = document.getElementById('btn-export-pdf');
@@ -371,13 +369,8 @@ btnExportAudio.addEventListener('click', exportAudio);
 // ─── Loading / error states ───────────────────────────────────────────────────
 
 function showError(msg) {
-  loadingState.setAttribute('hidden', '');
   errorText.textContent = msg;
   errorState.removeAttribute('hidden');
-}
-
-function hideLoading() {
-  loadingState.setAttribute('hidden', '');
 }
 
 // ─── Init ─────────────────────────────────────────────────────────────────────
@@ -420,8 +413,6 @@ async function init() {
     statusBadge.removeAttribute('hidden');
   }
 
-  hideLoading();
-
   // Show export toolbar; enable PDF+TXT only when a transcript exists.
   exportToolbar.removeAttribute('hidden');
   const hasTranscript = !!recording.segments?.length;
@@ -429,12 +420,7 @@ async function init() {
   btnExportTxt.disabled = !hasTranscript;
   btnExportAudio.disabled = !recording.blob;
 
-  if (!hasTranscript) {
-    noTranscript.removeAttribute('hidden');
-    return;
-  }
-
-  renderTranscript();
+  if (hasTranscript) renderTranscript();
 }
 
 init();

@@ -5,6 +5,7 @@
 
 import { formatDuration, formatTimestamp } from '../utils/helpers.js';
 import { getAllRecordings, getRecording, deleteRecording, exportRecordingBlob } from '../storage/storage-manager.js';
+import { signIn, signOut, getSession } from '../auth/cognito-client.js';
 
 // ─── DOM refs ─────────────────────────────────────────────────────────────────
 
@@ -17,8 +18,9 @@ const recordingsList = document.getElementById('recordings-list');
 
 // ─── State ────────────────────────────────────────────────────────────────────
 
-let timerInterval     = null;
+let timerInterval      = null;
 let recordingStartTime = null;
+let currentSession     = null;
 
 // ─── Timer ────────────────────────────────────────────────────────────────────
 
@@ -151,6 +153,69 @@ btnRecord.addEventListener('click', async () => {
   btnRecord.disabled = false;
 });
 
+// ─── Auth views ───────────────────────────────────────────────────────────────
+
+const loginView  = document.getElementById('login-view');
+const mainEl     = document.querySelector('main');
+const userInfo   = document.getElementById('user-info');
+const userNameEl = document.getElementById('user-name');
+
+function showApp(session) {
+  currentSession = session;
+  loginView.classList.add('hidden');
+  mainEl.classList.remove('hidden');
+  userNameEl.textContent = session.displayName;
+  userInfo.classList.remove('hidden');
+}
+
+function showLogin() {
+  currentSession = null;
+  mainEl.classList.add('hidden');
+  loginView.classList.remove('hidden');
+  userInfo.classList.add('hidden');
+  // Close settings if open
+  settingsPanel.classList.remove('open');
+  btnSettings.classList.remove('active');
+}
+
+// ─── Login form ───────────────────────────────────────────────────────────────
+
+const inputEmail  = document.getElementById('input-email');
+const inputPasswd = document.getElementById('input-password');
+const btnSignIn   = document.getElementById('btn-sign-in');
+const loginError  = document.getElementById('login-error');
+
+async function handleSignIn() {
+  const email    = inputEmail.value.trim();
+  const password = inputPasswd.value;
+  if (!email || !password) return;
+
+  loginError.textContent  = '';
+  btnSignIn.disabled      = true;
+  btnSignIn.textContent   = 'Signing in…';
+
+  try {
+    const session = await signIn(email, password);
+    showApp(session);
+    const state = await sendBg('GET_STATE');
+    applyRecordingState(state ?? {});
+    renderRecordings();
+  } catch (err) {
+    loginError.textContent = err.message;
+  } finally {
+    btnSignIn.disabled    = false;
+    btnSignIn.textContent = 'Sign in';
+  }
+}
+
+btnSignIn.addEventListener('click', handleSignIn);
+inputPasswd.addEventListener('keydown', (e) => { if (e.key === 'Enter') handleSignIn(); });
+
+document.getElementById('btn-logout').addEventListener('click', async () => {
+  await signOut();
+  showLogin();
+});
+
 // ─── Settings panel ───────────────────────────────────────────────────────────
 
 const btnSettings       = document.getElementById('btn-settings');
@@ -167,7 +232,14 @@ const settingsHint      = document.getElementById('settings-hint');
 btnSettings.addEventListener('click', () => {
   const isOpen = settingsPanel.classList.toggle('open');
   btnSettings.classList.toggle('active', isOpen);
-  document.querySelector('main').classList.toggle('hidden', isOpen);
+  if (isOpen) {
+    mainEl.classList.add('hidden');
+    loginView.classList.add('hidden');
+  } else if (currentSession) {
+    mainEl.classList.remove('hidden');
+  } else {
+    loginView.classList.remove('hidden');
+  }
 });
 
 btnSave.addEventListener('click', async () => {
@@ -210,10 +282,16 @@ document.getElementById('btn-dashboard').addEventListener('click', () => {
 // ─── Init ─────────────────────────────────────────────────────────────────────
 
 async function init() {
-  const state = await sendBg('GET_STATE');
-  applyRecordingState(state ?? {});
-  renderRecordings();
   loadSettings();
+  const session = await getSession();
+  if (session) {
+    showApp(session);
+    const state = await sendBg('GET_STATE');
+    applyRecordingState(state ?? {});
+    renderRecordings();
+  } else {
+    showLogin();
+  }
 }
 
 init();

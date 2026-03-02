@@ -3,6 +3,7 @@
 
 /* Ensure [hidden] attribute always wins over display:flex/grid on any element */
 [hidden] { display: none !important; }
+.hidden  { display: none !important; }
 
 :root {
   --c-bg:      #ffffff;
@@ -43,6 +44,29 @@ body {
   border-radius: 50%;
 }
 
+/* ── Header right group (user info + gear) ───────────────────────────────────── */
+.header-right {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.user-info {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.user-name {
+  font-size: 12px;
+  color: var(--c-muted);
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* ── Header gear button ──────────────────────────────────────────────────────── */
 .btn-icon-header {
   background: none;
@@ -52,7 +76,6 @@ body {
   cursor: pointer;
   line-height: 1;
   padding: 2px 4px;
-  margin-left: auto;
   transition: color 0.15s, transform 0.2s;
 }
 .btn-icon-header:hover { color: var(--c-text); }
@@ -110,9 +133,30 @@ body {
 .settings-hint.ok  { color: #16a34a; }
 .settings-hint.err { color: var(--c-danger); }
 
+/* ── Login view ──────────────────────────────────────────────────────────────── */
+.login-view {
+  padding: 20px 16px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.login-hint {
+  font-size: 13px;
+  color: var(--c-muted);
+  text-align: center;
+  padding-bottom: 4px;
+}
+
+.login-error {
+  font-size: 12px;
+  color: var(--c-danger);
+  min-height: 16px;
+  text-align: center;
+}
+
 /* ── Main layout ─────────────────────────────────────────────────────────────── */
 main { padding: 14px 16px; display: flex; flex-direction: column; gap: 14px; }
-main.hidden { display: none; }
 
 /* ── Status card ────────────────────────────────────────────────────────────── */
 .status-card {

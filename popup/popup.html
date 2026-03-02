@@ -13,7 +13,13 @@
         <span class="logo-dot"></span>
         <span class="logo-text">MeetRecord</span>
       </div>
-      <button class="btn-icon-header" id="btn-settings" title="Settings">&#9881;</button>
+      <div class="header-right">
+        <div class="user-info hidden" id="user-info">
+          <span class="user-name" id="user-name"></span>
+          <button class="btn-link" id="btn-logout">Sign out</button>
+        </div>
+        <button class="btn-icon-header" id="btn-settings" title="Settings">&#9881;</button>
+      </div>
     </header>
 
     <div class="settings-panel" id="settings-panel">
@@ -53,7 +59,19 @@
       <p class="settings-hint" id="settings-hint"></p>
     </div>
 
-    <main>
+    <!-- Login view — shown when not authenticated -->
+    <div class="login-view" id="login-view">
+      <p class="login-hint">Sign in to start recording</p>
+      <input type="email" id="input-email" class="settings-input"
+             placeholder="Work email" autocomplete="email" />
+      <input type="password" id="input-password" class="settings-input"
+             placeholder="Password" autocomplete="current-password" />
+      <button class="btn btn-primary" id="btn-sign-in">Sign in</button>
+      <p class="login-error" id="login-error"></p>
+    </div>
+
+    <!-- Main — shown when authenticated -->
+    <main class="hidden">
 
       <div class="status-card">
         <div class="status-indicator">
