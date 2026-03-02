@@ -6,13 +6,15 @@
 
 import { PLATFORMS, detectPlatformFromUrl } from './utils/platform-detector.js';
 import { generateRecordingId } from './utils/helpers.js';
-import { saveRecording, updateRecording } from './storage/storage-manager.js';
+import { saveRecording, updateRecording, getRecording } from './storage/storage-manager.js';
 import {
   uploadAudio,
   submitTranscriptionJob,
   fetchTranscriptResult,
   parseUtterances,
 } from './transcription/assemblyai-client.js';
+import { uploadRecordingToS3 } from './aws/s3-uploader.js';
+import { getSession } from './auth/cognito-client.js';
 
 // ─── State ────────────────────────────────────────────────────────────────────
 
@@ -54,32 +56,16 @@ async function closeOffscreenDocument() {
 
 // ─── Recording Control ────────────────────────────────────────────────────────
 
-function requestDesktopCapture() {
+function getTabStreamId(tabId) {
   return new Promise((resolve, reject) => {
-    const sources = ['tab', 'audio'];
-    chrome.desktopCapture.chooseDesktopMedia(sources, (streamId) => {
-      if (chrome.runtime.lastError || !streamId) {
-        reject(new Error(chrome.runtime.lastError?.message || 'Capture cancelled'));
-      } else {
-        resolve(streamId);
-      }
+    chrome.tabCapture.getMediaStreamId({ targetTabId: tabId }, (id) => {
+      if (chrome.runtime.lastError) reject(new Error(chrome.runtime.lastError.message));
+      else resolve(id);
     });
   });
 }
 
-function requestTabCapture(tabId) {
-  return new Promise((resolve, reject) => {
-    chrome.tabCapture.getMediaStreamId({ targetTabId: tabId }, (streamId) => {
-      if (chrome.runtime.lastError) {
-        reject(new Error(chrome.runtime.lastError.message));
-      } else {
-        resolve(streamId);
-      }
-    });
-  });
-}
-
-async function startRecording({ tabId, useDesktopCapture = false }) {
+async function startRecording({ tabId, streamId, captureMic = false }) {
   if (state.recording) {
     return { success: false, error: 'Already recording' };
   }
@@ -88,16 +74,23 @@ async function startRecording({ tabId, useDesktopCapture = false }) {
     const tab = await chrome.tabs.get(tabId);
     const platform = detectPlatformFromUrl(tab.url);
 
-    const streamId = useDesktopCapture
-      ? await requestDesktopCapture()
-      : await requestTabCapture(tabId);
+    // streamId is always provided by the popup; fall back for auto-record paths.
+    const captureStreamId = streamId ?? await getTabStreamId(tabId);
 
     await ensureOffscreenDocument();
 
+    const { recordAudio = true, recordVideo = true } = await chrome.storage.local.get({
+      recordAudio: true,
+      recordVideo: true,
+    });
+
     const response = await chrome.runtime.sendMessage({
       type: 'OFFSCREEN_START_RECORDING',
-      streamId,
-      captureMode: useDesktopCapture ? 'desktop' : 'tab',
+      streamId: captureStreamId,
+      captureMode: 'tab',
+      recordAudio,
+      recordVideo,
+      captureMic,
     });
 
     if (!response?.success) {
@@ -109,7 +102,7 @@ async function startRecording({ tabId, useDesktopCapture = false }) {
     state.tabId = tabId;
     state.platform = platform;
     state.startTime = Date.now();
-    state.streamId = streamId;
+    state.streamId = captureStreamId;
 
     await chrome.storage.session.set({ recordingState: serializeState() });
 
@@ -153,14 +146,15 @@ async function stopRecording() {
       chrome.tabs.sendMessage(tabId, { type: 'RECORDING_STOPPED' }).catch(() => {});
     }
 
-    // Reconstruct the Blob from the transferred ArrayBuffer
+    // Reconstruct the Blob from the transferred byte array
     const { buffer, mimeType, size } = offscreenResponse ?? {};
-    if (!buffer) {
+    if (!buffer || !size) {
       console.warn('[BG] Offscreen returned no buffer — recording may be empty');
       return { success: true, duration, platform };
     }
 
-    const blob = new Blob([buffer], { type: mimeType });
+    const audioBuffer = new Uint8Array(buffer).buffer;
+    const blob = new Blob([audioBuffer], { type: mimeType });
 
     // Persist the recording to IndexedDB
     await saveRecording({
@@ -175,7 +169,7 @@ async function stopRecording() {
     state.meetingTitle = null;
 
     // Kick off transcription asynchronously (does not block the response)
-    triggerTranscription(recordingId, buffer, mimeType).catch((err) =>
+    triggerTranscription(recordingId, audioBuffer, mimeType).catch((err) =>
       console.error('[BG] triggerTranscription error:', err)
     );
 
@@ -210,7 +204,7 @@ const POLL_ALARM = 'transcription-poll';
  * @param {string}      mimeType     e.g. 'video/webm;codecs=opus'
  */
 async function triggerTranscription(recordingId, audioBuffer, mimeType) {
-  const { assemblyAiApiKey: apiKey, speakersExpected } = await chrome.storage.sync.get({
+  const { assemblyAiApiKey: apiKey, speakersExpected } = await chrome.storage.local.get({
     assemblyAiApiKey: '',
     speakersExpected: 2,
   });
@@ -274,7 +268,7 @@ async function pollPendingTranscriptions() {
     return;
   }
 
-  const { assemblyAiApiKey: apiKey } = await chrome.storage.sync.get({ assemblyAiApiKey: '' });
+  const { assemblyAiApiKey: apiKey } = await chrome.storage.local.get({ assemblyAiApiKey: '' });
   if (!apiKey) {
     // Key was removed after jobs were submitted — mark all as failed
     for (const [transcriptId, job] of Object.entries(pendingTranscriptions)) {
@@ -310,11 +304,16 @@ async function pollPendingTranscriptions() {
         delete pendingTranscriptions[transcriptId];
         changed = true;
 
+        // 6. Auto-upload to S3 (runs asynchronously — does not block polling)
+        triggerS3Upload(job.recordingId).catch((err) =>
+          console.error('[BG] triggerS3Upload error:', err)
+        );
+
         chrome.notifications.create({
           type: 'basic',
           iconUrl: 'icons/icon48.png',
           title: 'Transcript Ready',
-          message: 'Your meeting transcript with speaker labels is ready.',
+          message: 'Your meeting transcript with speaker labels is ready. Uploading to cloud…',
         });
 
       } else if (result.status === 'error') {
@@ -342,6 +341,51 @@ async function pollPendingTranscriptions() {
   }
 }
 
+// ─── S3 Upload ────────────────────────────────────────────────────────────────
+
+/**
+ * Upload a completed recording's audio and transcript to S3.
+ * Called automatically after transcription reaches "completed".
+ * Updates IndexedDB status: uploading → uploaded (or upload_failed).
+ *
+ * @param {string} recordingId  IndexedDB record key.
+ */
+async function triggerS3Upload(recordingId) {
+  const session = await getSession();
+  if (!session) {
+    console.warn('[BG] No active session — skipping S3 upload for', recordingId);
+    return;
+  }
+
+  const recording = await getRecording(recordingId);
+  if (!recording?.blob) {
+    console.warn('[BG] No blob found — skipping S3 upload for', recordingId);
+    return;
+  }
+
+  try {
+    await updateRecording(recordingId, { status: 'uploading' });
+
+    const { audioUrl, transcriptUrl } = await uploadRecordingToS3(recording, session.username);
+
+    await updateRecording(recordingId, {
+      status:          'uploaded',
+      s3AudioUrl:      audioUrl,
+      s3TranscriptUrl: transcriptUrl,
+      uploadedBy:      session.username,
+      uploadedAt:      Date.now(),
+    });
+
+    console.log('[BG] S3 upload complete for', recordingId);
+  } catch (err) {
+    console.error('[BG] S3 upload failed for', recordingId, err);
+    await updateRecording(recordingId, {
+      status:      'upload_failed',
+      uploadError: err.message,
+    });
+  }
+}
+
 // Alarm listener — must be at top level, not inside an async function
 chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === POLL_ALARM) {
@@ -363,13 +407,19 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   if (type === 'START_RECORDING') {
     const tabId = message.tabId || sender.tab?.id;
-    startRecording({ tabId, useDesktopCapture: message.useDesktopCapture }).then(sendResponse);
+    startRecording({ tabId, streamId: message.streamId, captureMic: message.captureMic }).then(sendResponse);
     return true;
   }
 
   if (type === 'STOP_RECORDING') {
     stopRecording().then(sendResponse);
     return true;
+  }
+
+  if (type === 'RECORDER_DEBUG') {
+    if (message.msg) console.log('[Recorder]', message.msg);
+    else console.log('[Recorder] audio tracks:', message.audioTracks, message.audioStates, '| video tracks:', message.videoTracks);
+    return false;
   }
 
   if (type === 'MEETING_DETECTED') {
@@ -400,10 +450,10 @@ async function handleMeetingDetected(tab, { platform, meetingTitle, autoRecord }
 
   if (!autoRecord || state.recording) return;
 
-  const settings = await chrome.storage.sync.get({ autoRecord: false });
+  const settings = await chrome.storage.local.get({ autoRecord: false });
   if (!settings.autoRecord) return;
 
-  const result = await startRecording({ tabId: tab.id, useDesktopCapture: false });
+  const result = await startRecording({ tabId: tab.id, streamId: null, captureMic: true });
   if (result.success) {
     chrome.notifications.create({
       type: 'basic',

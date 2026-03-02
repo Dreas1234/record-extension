@@ -1,179 +1,217 @@
-# MeetRecord — Claude Code Project Context
+# MeetRecord — Claude Code Project Context (Updated Architecture)
 
-## What this project is
+## What this product is
 
-A Chrome extension (Manifest V3) for **internal company use**. The company owner needs to record meetings and interviews, get transcripts, differentiate speakers, and share those transcripts with participants. This is not a consumer product — it is a single-company internal tool. No multi-tenant auth, no public-facing accounts, no advertising.
+A two-part system for a company to record interviews, store them, and analyze candidates using AI.
+
+**Part 1 — Chrome Extension**
+Employees install it, log in with company credentials, record interviews, and it auto-uploads when done. That's it. Minimal UI.
+
+**Part 2 — Web Dashboard (separate website)**
+The whole team logs into a website to see all recordings and transcripts, who uploaded them, and formatted output ready to drop into an AI for candidate scoring and pattern analysis.
+
+**Same login works for both.** AWS Cognito handles authentication across the extension and the web dashboard.
+
+This is an internal tool for one company. Not a consumer product.
 
 ---
 
 ## Core principles
 
-- **Do not rebuild what exists.** Always read the relevant files before writing anything.
-- **Do not modify** `recorder/recorder.js` or `recorder/offscreen.html` unless explicitly told to.
-- **Do not modify** the MediaRecorder or offscreen document pipeline unless explicitly told to.
-- **Extend, don't replace.** Add new files and functions rather than rewriting existing ones.
-- **Match the existing UI style** — dark themed, clean, minimal. See `popup/popup.css` for reference.
-- This is an internal tool. Keep UIs functional and professional, not flashy.
+- Do not rebuild what exists. Always read relevant files before writing anything.
+- Do not modify `recorder/recorder.js` or `recorder/offscreen.html` unless explicitly told to.
+- Do not modify the MediaRecorder or offscreen document pipeline unless explicitly told to.
+- Extend, don't replace. Add new files rather than rewriting working ones.
+- Match the existing dark-themed UI style in `popup/popup.css` for the extension.
+- The web dashboard should be clean, professional, and readable — not flashy.
 
 ---
 
-## Current file structure
+## Tech stack
+
+| Concern | Solution |
+|---|---|
+| Recording | Chrome tabCapture + MediaRecorder (already built) |
+| Transcription + diarization | AssemblyAI (speaker_labels: true) (already built) |
+| File storage | AWS S3 |
+| Authentication | AWS Cognito (same credentials for extension + dashboard) |
+| Database | Transcript metadata stored as JSON in S3, indexed by recordingId |
+| Web dashboard | Standalone HTML/CSS/JS site hosted on S3 or simple hosting |
+| AI analysis | Transcripts formatted for copy-paste into Claude or ChatGPT |
+
+---
+
+## Current file structure (extension)
 
 ```
 record-extension/
-├── manifest.json                  # MV3 manifest (has: alarms, tabCapture, desktopCapture, storage, https://api.assemblyai.com/*)
-├── background.js                  # Service worker — recording orchestrator + transcription pipeline
+├── manifest.json
+├── background.js                  # Service worker — recording + transcription pipeline
+├── CLAUDE.md                      # This file
 ├── content-scripts/
-│   ├── common.js                  # Shared overlay UI
-│   ├── meet.js                    # Google Meet detector
-│   ├── zoom.js                    # Zoom Web Client detector
-│   └── teams.js                   # Microsoft Teams detector
+│   ├── common.js
+│   ├── meet.js
+│   ├── zoom.js
+│   └── teams.js
 ├── popup/
-│   ├── popup.html                 # Extension popup
-│   ├── popup.css                  # Dark-themed UI styles (reference this for all new UIs)
-│   └── popup.js                   # Controls, timer, recordings list
+│   ├── popup.html
+│   ├── popup.css                  # Dark theme — reference for all extension UI
+│   └── popup.js
 ├── recorder/
-│   ├── offscreen.html             # Offscreen document host — DO NOT MODIFY
-│   └── recorder.js                # MediaRecorder in offscreen context — DO NOT MODIFY
+│   ├── offscreen.html             # DO NOT MODIFY
+│   └── recorder.js                # DO NOT MODIFY
 ├── storage/
-│   └── storage-manager.js         # IndexedDB for recordings + settings
+│   └── storage-manager.js         # IndexedDB — local temp storage before upload
 ├── transcription/
-│   └── assemblyai-client.js       # AssemblyAI API functions
+│   └── assemblyai-client.js       # AssemblyAI functions
 ├── utils/
-│   ├── platform-detector.js       # URL + DOM platform fingerprinting
-│   └── helpers.js                 # formatDuration, waitForElement, etc.
+│   ├── platform-detector.js
+│   └── helpers.js
 └── icons/
-    ├── icon.svg
-    └── generate-icons.html
 ```
 
 ---
 
 ## What has been built so far
 
-### Prompt 1 — Core recording (COMPLETE)
-- Offscreen document + MediaRecorder pipeline
-- tabCapture as primary, desktopCapture as fallback
-- Background service worker manages recording state across SW sleep/wake using `chrome.storage.session`
-- IndexedDB storage via storage-manager.js
-- Popup UI with start/stop, timer, recordings list
-- Platform detection for Google Meet, Zoom, Teams
+### Recording pipeline (COMPLETE)
+- Offscreen document + MediaRecorder
+- tabCapture primary, desktopCapture fallback
+- Service worker state management via chrome.storage.session
+- IndexedDB local storage
+- Popup UI with start/stop and timer
+- Platform detection: Google Meet, Zoom, Teams
 
-### Prompt 2 — Transcription pipeline (COMPLETE)
-- `transcription/assemblyai-client.js` with four pure functions: `uploadAudio`, `submitTranscriptionJob`, `fetchTranscriptResult`, `parseUtterances`
-- `background.js` extended with: `triggerTranscription`, `registerPendingTranscription`, `pollPendingTranscriptions`
-- Polling via `chrome.alarms` (every 1 minute — MV3 minimum)
-- Pending jobs stored in `chrome.storage.session` as `{ transcriptId → recordingId }`
-- AssemblyAI API key and `speakersExpected` stored in `chrome.storage.local`
-- `storage-manager.js` extended with: `updateRecording(id, patches)` and new fields: `status`, `segments`, `transcriptId`
+### Transcription pipeline (COMPLETE)
+- assemblyai-client.js with uploadAudio, submitTranscriptionJob, fetchTranscriptResult, parseUtterances
+- background.js extended with triggerTranscription, polling via chrome.alarms
+- Segments saved to IndexedDB with status tracking
 
 ---
 
 ## Data formats
 
-### Recording object in IndexedDB
+### Recording object in IndexedDB (local, pre-upload)
 ```js
 {
   id: "generated-id",
-  blob: Blob,              // raw audio (WebM)
+  blob: Blob,
   date: Date,
   duration: Number,        // milliseconds
-  label: String,           // user-set label, e.g. "Q3 Interview - Sarah"
+  label: String,           // e.g. "Interview — Sarah Johnson"
   meetingTitle: String,    // auto-captured from DOM
-  status: "recording" | "processing" | "transcribed",
+  status: "recording" | "processing" | "transcribed" | "uploaded",
   transcriptId: String,    // AssemblyAI job ID
-  segments: Array,         // transcript segments (see below)
-  speakerNames: Object,    // { "Speaker_A": "John", "Speaker_B": "Sarah" }
-  tags: Array              // user-applied tags e.g. ["interview", "sales"]
+  segments: Array,         // transcript segments
+  uploadedBy: String       // Cognito username of the employee who recorded
 }
 ```
 
 ### Transcript segment format
 ```js
 {
-  speaker: "Speaker_A",   // raw label from AssemblyAI
-  text: "Hello, welcome.",
+  speaker: "Speaker_A",
+  text: "Tell me about your experience.",
   start: 1200,            // milliseconds
-  end: 3400,              // milliseconds
+  end: 3400,
   confidence: 0.94
 }
 ```
 
-### Speaker names
-After user renames speakers in the viewer, corrected names are stored in `speakerNames` on the recording object. When displaying transcripts, always resolve `segment.speaker` through `speakerNames` first, falling back to the raw label.
+### AI-ready transcript format (for dashboard export)
+```
+INTERVIEW TRANSCRIPT
+Candidate: [label or name]
+Date: [date]
+Duration: [duration]
+Recorded by: [employee name]
+
+[00:00] Interviewer: Tell me about your background...
+[00:45] Candidate: I have been working in sales for 5 years...
+
+---
+```
+Speaker A maps to "Interviewer" by default, Speaker B to "Candidate". User can correct in dashboard.
 
 ---
 
-## Settings stored in chrome.storage.local
-```js
-{
-  assemblyAiApiKey: '',     // set in popup options
-  speakersExpected: 2,      // default 2 for interviews, configurable 2–8
-  supabaseUrl: '',          // set in popup options (added in Prompt 4)
-  supabaseAnonKey: ''       // set in popup options (added in Prompt 4)
-}
+## Authentication (AWS Cognito)
+
+- Single Cognito User Pool for the company
+- Same credentials for Chrome extension and web dashboard
+- Extension stores Cognito JWT in chrome.storage.local after login
+- Token used to sign S3 uploads
+- Token refreshes using Cognito refresh token flow
+- Employees added to User Pool by admin — no self-signup
+
+---
+
+## S3 structure
+
+```
+s3://[bucket-name]/
+├── recordings/
+│   └── [userId]/
+│       └── [recordingId].webm
+└── transcripts/
+    └── [recordingId].json
 ```
 
----
-
-## Platforms supported
-- Google Meet (`meet.google.com`)
-- Zoom Web Client (`zoom.us/wc/`)
-- Microsoft Teams (`teams.microsoft.com`)
-
-Meeting title is extracted from the DOM in each content script and sent to `background.js` via `chrome.runtime.sendMessage` when recording starts.
+Each upload tagged with Cognito userId so dashboard shows who uploaded it.
 
 ---
 
-## Tech choices (do not change without being told)
+## What needs to be built (in order)
 
-| Concern | Solution |
-|---|---|
-| Transcription + diarization | AssemblyAI (`speaker_labels: true`) |
-| Cloud storage / sharing | Supabase (storage bucket + postgres) — added in Prompt 4 |
-| PDF export | jsPDF loaded from CDN — added in Prompt 6 |
-| Auth | None — single company, no login required |
-| Polling | chrome.alarms (1 min interval) |
-| State persistence across SW restarts | chrome.storage.session |
+### Prompt A — Login UI in Extension
+- Add a login screen to the popup using AWS Cognito
+- Email + password input fields
+- On success store JWT in chrome.storage.local
+- Show logged-in employee name in popup header
+- Logout button
+- All recording controls hidden until logged in
+- Do not modify recorder.js or offscreen.html
+
+### Prompt B — Auto-upload to S3 after transcription
+- After transcript status reaches "transcribed", auto-upload to S3
+- Upload audio blob to recordings/[userId]/[recordingId].webm
+- Upload transcript JSON to transcripts/[recordingId].json
+- Tag upload with userId, date, label, duration
+- Update IndexedDB status to "uploaded"
+- Show upload progress in popup
+- AWS region, bucket name, Cognito pool ID stored in chrome.storage.local
+
+### Prompt C — Web Dashboard (separate site)
+- Standalone website — plain HTML/CSS/JS, no framework
+- Login page using same Cognito credentials
+- After login, fetch all recordings from S3 for the company bucket
+- List view: candidate label, date, duration, recorded by, status
+- Click recording to open transcript view
+- Transcript in AI-ready format with speaker labels
+- "Copy for AI Analysis" button copies formatted transcript to clipboard
+- Clean professional design for hiring managers
+
+### Prompt D — Speaker Labeling in Dashboard
+- In transcript view, rename Speaker_A / Speaker_B to real roles
+- Default: Speaker_A = Interviewer, Speaker_B = Candidate
+- Saving corrections updates transcript JSON in S3
+- Corrected names used in AI-ready export
+
+### Prompt E — Export and AI Formatting
+- Export transcript as PDF from dashboard
+- PDF header: company logo placeholder, candidate name, date, recorded by
+- Body: formatted transcript with speaker names and timestamps
+- "Copy for AI" exports plain text optimized for Claude or ChatGPT
+- Prepend a ready-made analysis prompt:
+  "Please analyze this interview transcript and provide:
+   1) Overall candidate score out of 10
+   2) Key strengths observed
+   3) Areas of concern
+   4) Hiring recommendation"
 
 ---
 
-## What still needs to be built (in order)
-
-### Prompt 3 — Transcript Viewer + Speaker Renaming
-- `viewer/viewer.html` and `viewer/viewer.js` as a new tab page
-- Opens via "View Transcript" button in popup, passes `?id=RECORDING_ID`
-- Displays segments grouped by speaker with timestamps
-- Clicking speaker label opens inline rename input
-- Renaming one renames all from that speaker
-- Saves corrections to IndexedDB via `updateRecording`
-- Highlights segments with confidence below 0.80
-
-### Prompt 4 — Cloud Storage + Shareable Links
-- `utils/supabase-sync.js`
-- Syncs audio blob to Supabase storage bucket "recordings"
-- Inserts transcript into "transcripts" postgres table
-- Generates public shareable link
-- `share/index.html` — standalone page that displays a transcript from a URL param
-- "Copy share link" button in popup
-
-### Prompt 5 — Metadata + Dashboard
-- Auto-capture meeting title from DOM in each content script
-- `dashboard/dashboard.html` and `dashboard/dashboard.js`
-- Lists all recordings with label, title, date, duration, speaker names, status
-- Inline label editing, search, tag filtering
-- Buttons: View Transcript, Copy Share Link, Delete
-
-### Prompt 6 — Export
-- Export buttons in transcript viewer
-- PDF via jsPDF: company logo placeholder, header info, formatted transcript
-- TXT: plain text with speaker names and timestamps
-- Audio: download original WebM blob from IndexedDB
-- All client-side, no server
-
----
-
-## Manifest permissions already granted
-- `tabCapture`, `desktopCapture`, `storage`, `alarms`, `offscreen`, `notifications`, `activeTab`
-- Host permissions: `https://api.assemblyai.com/*`
-- Still needed: `https://*.supabase.co/*` (add in Prompt 4)
+## Manifest permissions needed
+Already have: tabCapture, desktopCapture, storage, alarms, offscreen, notifications, activeTab
+Already have host permission: https://api.assemblyai.com/*
+Still needed: https://cognito-idp.*.amazonaws.com/* and https://s3.amazonaws.com/*

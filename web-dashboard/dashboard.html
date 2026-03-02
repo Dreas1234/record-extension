@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Recordings — MeetRecord</title>
+  <link rel="stylesheet" href="app.css" />
+</head>
+<body>
+<div class="app">
+
+  <!-- Nav -->
+  <nav class="topnav">
+    <div class="topnav-left">
+      <div class="logo">
+        <span class="logo-dot"></span>
+        MeetRecord
+      </div>
+      <span style="font-size:13px;color:var(--c-muted);border-left:1px solid var(--c-border);padding-left:14px;">
+        Interview Recordings
+      </span>
+    </div>
+    <div class="topnav-right">
+      <span class="user-chip" id="user-chip"></span>
+      <button class="btn btn-ghost" id="logout-btn">Sign out</button>
+    </div>
+  </nav>
+
+  <!-- Body -->
+  <div class="page-body">
+
+    <div class="section-header">
+      <h1 class="section-title" id="count-label">Recordings</h1>
+      <div class="search-wrap">
+        <span class="icon">&#128269;</span>
+        <input class="search-input" type="search" id="search"
+               placeholder="Search by candidate or date…" autocomplete="off" />
+      </div>
+    </div>
+
+    <!-- Loading -->
+    <div class="center-msg" id="loading">
+      <span class="spinner"></span>
+      <span>Loading recordings from S3…</span>
+    </div>
+
+    <!-- Error -->
+    <div class="alert alert-error hidden" id="error-msg" style="margin-bottom:16px;"></div>
+
+    <!-- Empty -->
+    <div class="center-msg hidden" id="empty-msg">
+      <p class="title">No recordings yet.</p>
+      <p class="sub">Recordings appear here after employees upload them via the Chrome extension.</p>
+    </div>
+
+    <!-- No results -->
+    <div class="center-msg hidden" id="no-results">
+      <p class="title">No results.</p>
+      <p class="sub">Try a different search term.</p>
+    </div>
+
+    <!-- Table -->
+    <div class="table-wrap hidden" id="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Candidate / Label</th>
+            <th>Date</th>
+            <th>Duration</th>
+            <th>Recorded by</th>
+            <th>Status</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="table-body"></tbody>
+      </table>
+    </div>
+
+  </div>
+</div>
+
+<script type="module">
+import { requireAuth, signOut } from './auth.js';
+import { loadAllTranscripts }   from './aws.js';
+
+// ─── Auth guard ──────────────────────────────────────────────────────────────
+const session = await requireAuth();
+if (!session) throw new Error('Redirecting…');
+
+document.getElementById('user-chip').textContent = session.displayName;
+document.getElementById('logout-btn').addEventListener('click', () => {
+  signOut();
+  location.href = 'index.html';
+});
+
+// ─── State ───────────────────────────────────────────────────────────────────
+let allRecordings = [];
+let searchQuery   = '';
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+function esc(str) {
+  return String(str ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function formatDate(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+function formatDuration(ms) {
+  if (!ms) return '—';
+  const s = Math.floor(ms / 1000);
+  const m = Math.floor(s / 60);
+  const h = Math.floor(m / 60);
+  if (h > 0) return `${h}h ${m % 60}m`;
+  return `${m}m ${s % 60}s`;
+}
+
+function statusBadge(rec) {
+  const hasTranscript = rec.segments?.length > 0;
+  if (hasTranscript) return '<span class="badge badge-green">Transcribed</span>';
+  return '<span class="badge badge-gray">No transcript</span>';
+}
+
+// ─── Render ───────────────────────────────────────────────────────────────────
+function getFiltered() {
+  if (!searchQuery) return allRecordings;
+  const q = searchQuery.toLowerCase();
+  return allRecordings.filter(r =>
+    [r.label, r.meetingTitle, r.uploadedBy, r.userId].filter(Boolean).join(' ').toLowerCase().includes(q)
+  );
+}
+
+function render() {
+  const filtered = getFiltered();
+  const loadingEl  = document.getElementById('loading');
+  const emptyEl    = document.getElementById('empty-msg');
+  const noResultEl = document.getElementById('no-results');
+  const tableWrap  = document.getElementById('table-wrap');
+  const countLabel = document.getElementById('count-label');
+
+  loadingEl.classList.add('hidden');
+
+  const total = allRecordings.length;
+  countLabel.textContent = filtered.length === total
+    ? `Recordings (${total})`
+    : `Recordings (${filtered.length} of ${total})`;
+
+  if (total === 0) {
+    emptyEl.classList.remove('hidden');
+    noResultEl.classList.add('hidden');
+    tableWrap.classList.add('hidden');
+    return;
+  }
+
+  emptyEl.classList.add('hidden');
+
+  if (filtered.length === 0) {
+    noResultEl.classList.remove('hidden');
+    tableWrap.classList.add('hidden');
+    return;
+  }
+
+  noResultEl.classList.add('hidden');
+  tableWrap.classList.remove('hidden');
+
+  document.getElementById('table-body').innerHTML = filtered.map(r => {
+    const label    = r.label || r.meetingTitle || r.recordingId || 'Untitled';
+    const subtitle = r.meetingTitle && r.meetingTitle !== label ? r.meetingTitle : '';
+    const hasT     = r.segments?.length > 0;
+    return `
+      <tr data-id="${esc(r.recordingId)}">
+        <td>
+          <div class="td-label">${esc(label)}</div>
+          ${subtitle ? `<div class="td-sub">${esc(subtitle)}</div>` : ''}
+        </td>
+        <td class="td-muted">${formatDate(r.date)}</td>
+        <td class="td-muted">${formatDuration(r.duration)}</td>
+        <td class="td-muted">${esc(r.uploadedBy || r.userId || '—')}</td>
+        <td>${statusBadge(r)}</td>
+        <td>
+          <a class="action-link ${!hasT ? 'action-link--disabled' : ''}"
+             href="transcript.html?id=${esc(r.recordingId)}"
+             ${!hasT ? 'aria-disabled="true" tabindex="-1"' : ''}
+             title="${!hasT ? 'No transcript available' : 'View transcript'}">
+            &#128065; View
+          </a>
+        </td>
+      </tr>`;
+  }).join('');
+}
+
+// Row click → navigate to transcript (unless clicking the link directly)
+document.getElementById('table-body').addEventListener('click', (e) => {
+  if (e.target.closest('a')) return;
+  const row = e.target.closest('tr[data-id]');
+  if (!row) return;
+  const id = row.dataset.id;
+  const rec = allRecordings.find(r => r.recordingId === id);
+  if (rec?.segments?.length) location.href = `transcript.html?id=${encodeURIComponent(id)}`;
+});
+
+// Search
+document.getElementById('search').addEventListener('input', (e) => {
+  searchQuery = e.target.value.trim();
+  render();
+});
+
+// ─── Load recordings from S3 ─────────────────────────────────────────────────
+try {
+  allRecordings = await loadAllTranscripts(session.idToken);
+  render();
+} catch (err) {
+  document.getElementById('loading').classList.add('hidden');
+  const errEl = document.getElementById('error-msg');
+  errEl.textContent = `Failed to load recordings: ${err.message}`;
+  errEl.classList.remove('hidden');
+  console.error('[dashboard]', err);
+}
+</script>
+</body>
+</html>

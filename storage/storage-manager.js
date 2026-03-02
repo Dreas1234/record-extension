@@ -155,27 +155,21 @@ const DEFAULT_SETTINGS = {
   recordVideo: true,
   storageLimit: 500, // MB
   notifyOnStart: true,
-  notifyOnStop: true,
-  cloudSync: false,
-  cloudProvider: null,
   // Transcription
   assemblyAiApiKey: '',
-  speakersExpected: 2,   // default for interviews (interviewer + candidate)
-  // Cloud sharing (Prompt 4)
-  supabaseUrl: '',
-  supabaseAnonKey: '',
+  speakersExpected: 2,
 };
 
 export async function getSettings() {
-  return chrome.storage.sync.get(DEFAULT_SETTINGS);
+  return chrome.storage.local.get(DEFAULT_SETTINGS);
 }
 
 export async function saveSettings(partial) {
-  await chrome.storage.sync.set(partial);
+  await chrome.storage.local.set(partial);
 }
 
 export async function resetSettings() {
-  await chrome.storage.sync.set(DEFAULT_SETTINGS);
+  await chrome.storage.local.set(DEFAULT_SETTINGS);
 }
 
 // ─── Export helpers ───────────────────────────────────────────────────────────

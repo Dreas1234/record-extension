@@ -52,6 +52,7 @@ export async function submitTranscriptionJob(uploadUrl, apiKey, { speakersExpect
     },
     body: JSON.stringify({
       audio_url: uploadUrl,
+      speech_models: ['universal-2'],
       speaker_labels: true,
       speakers_expected: speakersExpected,
     }),

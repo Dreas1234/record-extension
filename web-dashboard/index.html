@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sign In — MeetRecord</title>
+  <link rel="stylesheet" href="app.css" />
+</head>
+<body>
+<div class="login-page">
+  <div class="login-card">
+
+    <div class="login-header">
+      <div class="login-logo">
+        <span class="logo-dot"></span>
+        MeetRecord
+      </div>
+      <p class="login-sub">Sign in with your company account</p>
+    </div>
+
+    <form class="login-form" id="login-form" novalidate>
+      <div class="field-group">
+        <label class="field-label" for="email">Email</label>
+        <input class="field-input" type="email" id="email" name="email"
+               placeholder="you@company.com" autocomplete="email" required />
+      </div>
+
+      <div class="field-group">
+        <label class="field-label" for="password">Password</label>
+        <input class="field-input" type="password" id="password" name="password"
+               placeholder="Password" autocomplete="current-password" required />
+      </div>
+
+      <div class="alert alert-error hidden" id="error-msg" role="alert"></div>
+
+      <button class="btn btn-primary btn-full" type="submit" id="submit-btn">
+        Sign In
+      </button>
+    </form>
+
+    <p class="login-footer">MeetRecord · Internal tool</p>
+  </div>
+</div>
+
+<script type="module">
+import { signIn, getSession } from './auth.js';
+
+// Already logged in → go straight to dashboard
+getSession().then(session => {
+  if (session) location.href = 'dashboard.html';
+});
+
+const form      = document.getElementById('login-form');
+const emailEl   = document.getElementById('email');
+const passEl    = document.getElementById('password');
+const errorMsg  = document.getElementById('error-msg');
+const submitBtn = document.getElementById('submit-btn');
+
+form.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const email    = emailEl.value.trim();
+  const password = passEl.value;
+
+  if (!email || !password) {
+    showError('Please enter your email and password.');
+    return;
+  }
+
+  submitBtn.disabled    = true;
+  submitBtn.textContent = 'Signing in…';
+  errorMsg.classList.add('hidden');
+
+  try {
+    await signIn(email, password);
+    location.href = 'dashboard.html';
+  } catch (err) {
+    showError(err.message);
+  } finally {
+    submitBtn.disabled    = false;
+    submitBtn.textContent = 'Sign In';
+  }
+});
+
+function showError(msg) {
+  errorMsg.textContent = msg;
+  errorMsg.classList.remove('hidden');
+}
+</script>
+</body>
+</html>

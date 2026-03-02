@@ -4,10 +4,9 @@
  * inline label editing, tag management, and per-recording actions.
  */
 
-import { getAllRecordings, getRecording, updateRecording, deleteRecording, getSettings } from '../storage/storage-manager.js';
+import { getAllRecordings, updateRecording, deleteRecording } from '../storage/storage-manager.js';
 import { getPlatformLabel } from '../utils/platform-detector.js';
 import { formatDuration, formatTimestamp, formatBytes } from '../utils/helpers.js';
-import { syncRecording } from '../utils/supabase-sync.js';
 
 // ─── DOM refs ─────────────────────────────────────────────────────────────────
 
@@ -113,7 +112,6 @@ function recordingCardHtml(r) {
   const speakers     = getSpeakerDisplay(r);
   const tags         = r.tags ?? [];
   const hasTranscript = !!r.segments?.length;
-  const shareLabel   = r.shareUrl ? 'Copy Share Link' : 'Share';
 
   const tagsHtml = [
     ...tags.map((t) => `
@@ -164,10 +162,6 @@ function recordingCardHtml(r) {
                   ${!hasTranscript ? 'disabled title="No transcript yet"' : ''}>
             &#128065; View Transcript
           </button>
-          <button class="action-btn" data-action="share" data-id="${r.id}"
-                  ${r.shareUrl ? 'class="action-btn accent"' : ''}>
-            &#128279; ${escapeHtml(shareLabel)}
-          </button>
           <button class="action-btn danger" data-action="delete" data-id="${r.id}">
             &#10005; Delete
           </button>
@@ -212,11 +206,6 @@ recordingsList.addEventListener('click', async (e) => {
 
   if (action === 'view') {
     chrome.tabs.create({ url: chrome.runtime.getURL(`viewer/viewer.html?id=${id}`) });
-    return;
-  }
-
-  if (action === 'share') {
-    await handleShare(id, el);
     return;
   }
 
@@ -333,58 +322,6 @@ async function removeTag(id, tag) {
 }
 
 // ─── Share handler ────────────────────────────────────────────────────────────
-
-async function handleShare(id, btn) {
-  const rec = allRecordings.find((r) => r.id === id);
-  if (!rec) return;
-
-  if (rec.shareUrl) {
-    await copyToClipboard(rec.shareUrl, btn, 'Copy Share Link');
-    return;
-  }
-
-  if (!rec.segments?.length) {
-    alert('This recording has no transcript yet. Transcription must complete before sharing.');
-    return;
-  }
-
-  const { supabaseUrl, supabaseAnonKey } = await getSettings();
-  if (!supabaseUrl || !supabaseAnonKey) {
-    alert('Set your Supabase URL and anon key in the extension settings before sharing.');
-    return;
-  }
-
-  // Load the full record (with blob) for upload
-  const fullRec = await getRecording(id);
-  if (!fullRec?.blob) {
-    alert('Recording blob not found in local storage.');
-    return;
-  }
-
-  const origText = btn.textContent;
-  btn.disabled = true;
-  btn.textContent = '… Uploading';
-
-  try {
-    const { shareUrl } = await syncRecording(fullRec, { supabaseUrl, supabaseAnonKey });
-    await updateRecording(id, { shareUrl });
-    rec.shareUrl = shareUrl;
-    await copyToClipboard(shareUrl, btn, 'Copy Share Link');
-  } catch (err) {
-    console.error('[dashboard] Share failed:', err);
-    alert(`Share failed: ${err.message}`);
-    btn.textContent = origText;
-  } finally {
-    btn.disabled = false;
-  }
-}
-
-async function copyToClipboard(text, btn, resetLabel) {
-  await navigator.clipboard.writeText(text);
-  const prev = btn.textContent;
-  btn.textContent = '✓ Copied!';
-  setTimeout(() => { btn.textContent = resetLabel ?? prev; }, 1500);
-}
 
 // ─── Search ───────────────────────────────────────────────────────────────────
 

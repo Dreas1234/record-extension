@@ -2,90 +2,100 @@
  * recorder/recorder.js
  * Runs inside the offscreen document.
  * Handles MediaRecorder lifecycle and chunked blob assembly.
+ * Supports tab-only audio or tab + microphone mixed recording.
  */
 
 let mediaRecorder = null;
 let recordedChunks = [];
-let activeStream = null;
+let activeStream    = null;  // tab/desktop capture stream
+let activeMicStream = null;  // microphone stream
+let activeAudioCtx  = null;  // AudioContext used for mixing
 
 // ─── Preferred MIME type ──────────────────────────────────────────────────────
 
 function getSupportedMimeType() {
   const candidates = [
-    'video/webm;codecs=vp9,opus',
-    'video/webm;codecs=vp8,opus',
-    'video/webm',
-    'video/mp4',
+    'audio/webm;codecs=opus',
+    'audio/webm',
+    'audio/ogg;codecs=opus',
   ];
-  return candidates.find((m) => MediaRecorder.isTypeSupported(m)) ?? '';
+  return candidates.find((m) => MediaRecorder.isTypeSupported(m)) ?? 'audio/webm';
 }
 
 // ─── Start recording ──────────────────────────────────────────────────────────
 
-async function startRecording({ streamId, captureMode }) {
+async function startRecording({ streamId, captureMode, captureMic = false }) {
   if (mediaRecorder?.state === 'recording') {
     return { success: false, error: 'Already recording' };
   }
 
   try {
-    // Obtain the MediaStream from the stream ID provided by the service worker
-    const constraints = {
+    const source = captureMode === 'desktop' ? 'desktop' : 'tab';
+
+    // Tab capture requires video to be requested even when only audio is wanted —
+    // Chrome will not activate the tab's audio pipeline for audio-only constraints.
+    activeStream = await navigator.mediaDevices.getUserMedia({
       audio: {
         mandatory: {
-          chromeMediaSource: captureMode === 'desktop' ? 'desktop' : 'tab',
+          chromeMediaSource: source,
           chromeMediaSourceId: streamId,
         },
       },
       video: {
         mandatory: {
-          chromeMediaSource: captureMode === 'desktop' ? 'desktop' : 'tab',
+          chromeMediaSource: source,
           chromeMediaSourceId: streamId,
         },
       },
-    };
-
-    activeStream = await navigator.mediaDevices.getUserMedia(constraints);
-
-    // Optionally mix in microphone audio
-    const settings = await getSettings();
-    if (settings.recordAudio && captureMode !== 'desktop') {
-      try {
-        const micStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-        const ctx = new AudioContext();
-        const dest = ctx.createMediaStreamDestination();
-        ctx.createMediaStreamSource(activeStream).connect(dest);
-        ctx.createMediaStreamSource(micStream).connect(dest);
-        // Replace audio tracks with mixed track
-        activeStream.getAudioTracks().forEach((t) => activeStream.removeTrack(t));
-        activeStream.addTrack(dest.stream.getAudioTracks()[0]);
-      } catch {
-        // Microphone unavailable — record tab audio only
-      }
-    }
+    });
 
     const mimeType = getSupportedMimeType();
     recordedChunks = [];
 
-    mediaRecorder = new MediaRecorder(activeStream, {
+    let recordStream;
+
+    if (captureMic) {
+      // ── Mixed recording: tab audio + microphone ──────────────────────────────
+      activeMicStream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression:  true,
+          sampleRate:        48000,
+        },
+        video: false,
+      });
+
+      const audioCtx   = new AudioContext();
+      activeAudioCtx   = audioCtx;
+      const destination = audioCtx.createMediaStreamDestination();
+
+      // Connect both sources into the single destination
+      audioCtx.createMediaStreamSource(
+        new MediaStream(activeStream.getAudioTracks())
+      ).connect(destination);
+
+      audioCtx.createMediaStreamSource(activeMicStream).connect(destination);
+
+      recordStream = destination.stream;
+    } else {
+      // ── Tab audio only ───────────────────────────────────────────────────────
+      recordStream = new MediaStream(activeStream.getAudioTracks());
+    }
+
+    mediaRecorder = new MediaRecorder(recordStream, {
       mimeType,
-      videoBitsPerSecond: 2_500_000,
       audioBitsPerSecond: 128_000,
     });
 
     mediaRecorder.ondataavailable = (e) => {
-      if (e.data && e.data.size > 0) {
-        recordedChunks.push(e.data);
-      }
+      if (e.data && e.data.size > 0) recordedChunks.push(e.data);
     };
 
     mediaRecorder.onerror = (e) => {
       console.error('[Recorder] MediaRecorder error:', e.error);
-      chrome.runtime.sendMessage({ type: 'RECORDER_ERROR', error: e.error?.message });
     };
 
-    // Collect data every 5 seconds for resilience
     mediaRecorder.start(5000);
-
     return { success: true, mimeType };
   } catch (err) {
     console.error('[Recorder] startRecording error:', err);
@@ -105,16 +115,14 @@ function stopRecording() {
     }
 
     mediaRecorder.onstop = () => {
-      const mimeType = mediaRecorder.mimeType || 'video/webm';
+      const mimeType = mediaRecorder.mimeType || 'audio/webm';
       const blob = new Blob(recordedChunks, { type: mimeType });
       cleanup();
 
-      // Transfer the blob back to the service worker via a message
-      // (Blobs can't cross the offscreen boundary directly, so we use a URL or ArrayBuffer)
-      blob.arrayBuffer().then((buffer) => {
+      blob.arrayBuffer().then((arrayBuffer) => {
         resolve({
           success: true,
-          buffer,       // ArrayBuffer — serializable
+          buffer: Array.from(new Uint8Array(arrayBuffer)),
           mimeType,
           size: blob.size,
         });
@@ -147,17 +155,13 @@ function resumeRecording() {
 
 function cleanup() {
   activeStream?.getTracks().forEach((t) => t.stop());
-  activeStream = null;
-  mediaRecorder = null;
-  recordedChunks = [];
-}
-
-// ─── Settings shim (offscreen has no direct storage access via import) ────────
-
-async function getSettings() {
-  return new Promise((resolve) => {
-    chrome.storage.sync.get({ recordAudio: true, recordVideo: true }, resolve);
-  });
+  activeMicStream?.getTracks().forEach((t) => t.stop());
+  activeAudioCtx?.close();
+  activeStream    = null;
+  activeMicStream = null;
+  activeAudioCtx  = null;
+  mediaRecorder   = null;
+  recordedChunks  = [];
 }
 
 // ─── Message listener ─────────────────────────────────────────────────────────
