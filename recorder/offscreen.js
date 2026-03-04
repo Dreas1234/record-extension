@@ -17,7 +17,10 @@ let recordedChunks = [];
 let tabStream  = null;   // chromeMediaSource:'tab' stream
 let micStream  = null;   // microphone stream
 let audioCtx   = null;   // AudioContext used for mixing
-let monitorCtx = null;   // AudioContext used for speaker monitoring
+let monitorCtx = null;   // AudioContext used for speaker monitor
+let silenceInterval = null;  // silence detection polling
+let silenceCounter  = 0;     // consecutive silent checks (each 5s)
+let silenceWarningActive = false;
 
 // ─── MIME type ────────────────────────────────────────────────────────────────
 
@@ -32,7 +35,7 @@ function getSupportedMimeType() {
 
 // ─── Start ────────────────────────────────────────────────────────────────────
 
-async function startRecording({ streamId, captureMic = false }) {
+async function startRecording({ streamId, captureMic = false, selectedMicDeviceId = '' }) {
   if (mediaRecorder?.state === 'recording') {
     return { success: false, error: 'Already recording' };
   }
@@ -70,14 +73,23 @@ async function startRecording({ streamId, captureMic = false }) {
 
     if (captureMic) {
       // ── Mix tab audio + microphone ─────────────────────────────────────────
-      micStream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          sampleRate: 48000,
-        },
-        video: false,
-      });
+      const micConstraints = {
+        echoCancellation: true,
+        noiseSuppression: true,
+        sampleRate: 48000,
+      };
+      if (selectedMicDeviceId) {
+        micConstraints.deviceId = { exact: selectedMicDeviceId };
+      }
+
+      try {
+        micStream = await navigator.mediaDevices.getUserMedia({
+          audio: micConstraints,
+          video: false,
+        });
+      } catch (micErr) {
+        console.warn('[Offscreen] Mic getUserMedia failed, continuing with tab audio only:', micErr.message);
+      }
 
       audioCtx = new AudioContext();
       const destination = audioCtx.createMediaStreamDestination();
@@ -87,8 +99,40 @@ async function startRecording({ streamId, captureMic = false }) {
         new MediaStream(tabStream.getAudioTracks())
       ).connect(destination);
 
-      // Microphone → destination
-      audioCtx.createMediaStreamSource(micStream).connect(destination);
+      if (micStream) {
+        // Microphone → destination
+        const micSource = audioCtx.createMediaStreamSource(micStream);
+        micSource.connect(destination);
+
+        // ── Silence detection ──────────────────────────────────────────────
+        const analyser = audioCtx.createAnalyser();
+        analyser.fftSize = 256;
+        micSource.connect(analyser);
+
+        const freqData = new Uint8Array(analyser.frequencyBinCount);
+        silenceCounter = 0;
+        silenceWarningActive = false;
+
+        silenceInterval = setInterval(() => {
+          analyser.getByteFrequencyData(freqData);
+          const avg = freqData.reduce((sum, v) => sum + v, 0) / freqData.length;
+
+          if (avg < 5) {
+            silenceCounter++;
+            // 3 consecutive checks at 5s = 15 seconds of silence
+            if (silenceCounter >= 3 && !silenceWarningActive) {
+              silenceWarningActive = true;
+              chrome.runtime.sendMessage({ type: 'MIC_SILENCE_WARNING' }).catch(() => {});
+            }
+          } else {
+            silenceCounter = 0;
+            if (silenceWarningActive) {
+              silenceWarningActive = false;
+              chrome.runtime.sendMessage({ type: 'MIC_SILENCE_CLEARED' }).catch(() => {});
+            }
+          }
+        }, 5000);
+      }
 
       recordStream = destination.stream;
     } else {
@@ -168,6 +212,9 @@ function resumeRecording() {
 // ─── Cleanup ──────────────────────────────────────────────────────────────────
 
 function cleanup() {
+  if (silenceInterval) { clearInterval(silenceInterval); silenceInterval = null; }
+  silenceCounter = 0;
+  silenceWarningActive = false;
   tabStream?.getTracks().forEach((t) => t.stop());
   micStream?.getTracks().forEach((t) => t.stop());
   audioCtx?.close();

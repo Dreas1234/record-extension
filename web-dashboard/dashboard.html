@@ -94,9 +94,8 @@
 </div>
 
 <script type="module">
-import { requireAuth, signOut }                              from './auth.js';
-import { getAWSCredentials, loadAllTranscripts,
-         getTranscriptJson, putTranscriptJson }              from './aws.js';
+import { requireAuth, signOut } from './auth.js';
+import { fetchRecordingsList, fetchTranscript, updateTranscript } from './aws.js';
 
 // ─── Auth guard ───────────────────────────────────────────────────────────────
 const session = await requireAuth();
@@ -125,6 +124,13 @@ function formatDuration(ms) {
   const s = Math.floor(ms / 1000), m = Math.floor(s / 60), h = Math.floor(m / 60);
   return h > 0 ? `${h}h ${m % 60}m` : `${m}m ${s % 60}s`;
 }
+function formatDurationHuman(ms) {
+  if (!ms) return '—';
+  const totalMin = Math.round(ms / 60000);
+  if (totalMin < 60) return `${totalMin} minutes`;
+  const h = Math.floor(totalMin / 60), m = totalMin % 60;
+  return m > 0 ? `${h} hour${h > 1 ? 's' : ''} ${m} minutes` : `${h} hour${h > 1 ? 's' : ''}`;
+}
 function fmtMs(ms) {
   const s = Math.floor(ms / 1000), m = Math.floor(s / 60), h = Math.floor(m / 60);
   return h > 0
@@ -137,6 +143,7 @@ const listView       = document.getElementById('list-view');
 const transcriptView = document.getElementById('transcript-view');
 const btnBack        = document.getElementById('btn-back');
 const navCenter      = document.getElementById('nav-center');
+let savedScrollY     = 0;
 
 function showList() {
   transcriptView.classList.add('hidden');
@@ -144,13 +151,16 @@ function showList() {
   btnBack.classList.add('hidden');
   navCenter.classList.remove('hidden');
   document.title = 'Recordings — MeetRecord';
+  window.scrollTo(0, savedScrollY);
 }
 
 function showTranscript() {
+  savedScrollY = window.scrollY;
   listView.classList.add('hidden');
   transcriptView.classList.remove('hidden');
   btnBack.classList.remove('hidden');
   navCenter.classList.add('hidden');
+  window.scrollTo(0, 0);
 }
 
 btnBack.addEventListener('click', showList);
@@ -163,7 +173,7 @@ function getFiltered() {
   if (!searchQuery) return allRecordings;
   const q = searchQuery.toLowerCase();
   return allRecordings.filter(r =>
-    [r.label, r.meetingTitle, r.uploadedBy, r.userId].filter(Boolean).join(' ').toLowerCase().includes(q)
+    [r.label, r.uploadedBy].filter(Boolean).join(' ').toLowerCase().includes(q)
   );
 }
 
@@ -178,24 +188,23 @@ function renderList() {
   document.getElementById('no-results').classList.toggle('hidden', !(total > 0 && filtered.length === 0));
 
   document.getElementById('cards-list').innerHTML = filtered.map(r => {
-    const label  = r.label || r.meetingTitle || r.recordingId || 'Untitled';
-    const hasT   = r.segments?.length > 0;
-    const pill   = hasT
+    const label  = r.label || r.recordingId || 'Untitled';
+    const status = r.status || '';
+    const pill   = status === 'transcribed' || status === 'uploaded'
       ? '<span class="pill pill-green">Transcribed</span>'
       : '<span class="pill pill-gray">Processing</span>';
-    const viewBtn = hasT
+    const viewBtn = status === 'transcribed' || status === 'uploaded'
       ? `<button class="btn-view" data-action="view" data-id="${esc(r.recordingId)}">View Transcript</button>`
       : '';
     return `
       <div class="rec-card">
         <div class="rec-info">
           <div class="rec-name">${esc(label)}</div>
-          <div class="rec-meta">${formatDate(r.date)} · ${formatDuration(r.duration)} · ${esc(r.uploadedBy || r.userId || '—')}</div>
+          <div class="rec-meta">${formatDate(r.date)} · ${formatDuration(r.duration)} · ${esc(r.uploadedBy || '—')}</div>
         </div>
         <div class="rec-actions">
           ${pill}
           ${viewBtn}
-          <button class="btn-del" data-action="delete" data-id="${esc(r.recordingId)}">Delete</button>
         </div>
       </div>`;
   }).join('');
@@ -204,14 +213,8 @@ function renderList() {
 document.getElementById('cards-list').addEventListener('click', (e) => {
   const btn = e.target.closest('[data-action]');
   if (!btn) return;
-  const { action, id } = btn.dataset;
-
-  if (action === 'view') {
-    openTranscript(id);
-  } else if (action === 'delete') {
-    if (!confirm('Remove this recording from the list?')) return;
-    allRecordings = allRecordings.filter(r => r.recordingId !== id);
-    renderList();
+  if (btn.dataset.action === 'view') {
+    openTranscript(btn.dataset.id);
   }
 });
 
@@ -226,7 +229,7 @@ function sortedSpeakers(segments) {
 }
 
 function resolveSpeakerNames(rec) {
-  if (rec.speakerNames && Object.keys(rec.speakerNames).length > 0) return { ...rec.speakerNames };
+  if (rec.speakerMap && Object.keys(rec.speakerMap).length > 0) return { ...rec.speakerMap };
   const defaults = {};
   sortedSpeakers(rec.segments).forEach((sp, i) => {
     defaults[sp] = i === 0 ? 'Interviewer' : i === 1 ? 'Candidate' : sp;
@@ -240,7 +243,7 @@ function speakerClass(speaker, speakers) {
 }
 
 function buildAIText(rec, names) {
-  const label = rec.label || rec.meetingTitle || 'Unknown Candidate';
+  const label = rec.label || 'Unknown Candidate';
   const date  = rec.date
     ? new Date(rec.date).toLocaleDateString('en-US', { month:'long', day:'numeric', year:'numeric' })
     : '—';
@@ -248,24 +251,33 @@ function buildAIText(rec, names) {
     'INTERVIEW TRANSCRIPT',
     `Candidate: ${label}`,
     `Date: ${date}`,
-    `Duration: ${formatDuration(rec.duration)}`,
-    `Recorded by: ${rec.uploadedBy || rec.userId || '—'}`,
-    '',
+    `Duration: ${formatDurationHuman(rec.duration)}`,
+    `Recorded by: ${rec.uploadedBy || '—'}`,
   ].join('\n');
   const body = (rec.segments ?? [])
     .map(seg => `[${fmtMs(seg.start)}] ${names[seg.speaker] ?? seg.speaker}: ${seg.text}`)
     .join('\n');
-  return `${header}\n${body}\n\n---\n\nPlease analyze this interview transcript and provide:\n1) Overall candidate score out of 10\n2) Key strengths observed\n3) Areas of concern\n4) Hiring recommendation`;
+  const analysis = [
+    '---',
+    'ANALYSIS REQUEST:',
+    'Please analyze this interview transcript and provide a structured evaluation:',
+    '1. CANDIDATE SCORE: Rate out of 10 with brief justification.',
+    '2. KEY STRENGTHS: 3\u20135 specific strengths demonstrated.',
+    '3. AREAS OF CONCERN: Red flags, gaps, or weaknesses.',
+    '4. CULTURE FIT: Communication style and cultural alignment.',
+    '5. HIRING RECOMMENDATION: Hire / Consider / Pass \u2014 one-paragraph rationale.',
+  ].join('\n');
+  return `${header}\n\nTRANSCRIPT:\n${body}\n\n${analysis}`;
 }
 
 function renderTranscript(rec, names, speakers) {
-  const label = rec.label || rec.meetingTitle || 'Untitled Interview';
+  const label = rec.label || 'Untitled Interview';
   document.getElementById('transcript-header-text').textContent = [
     'INTERVIEW TRANSCRIPT',
     `Candidate: ${label}`,
     `Date: ${rec.date ? new Date(rec.date).toLocaleDateString('en-US', { month:'long', day:'numeric', year:'numeric' }) : '—'}`,
     `Duration: ${formatDuration(rec.duration)}`,
-    `Recorded by: ${rec.uploadedBy || rec.userId || '—'}`,
+    `Recorded by: ${rec.uploadedBy || '—'}`,
   ].join('\n');
 
   const uttEl = document.getElementById('utterances');
@@ -302,7 +314,7 @@ function renderSpeakerEditor(names, speakers) {
 }
 
 // ─── Open transcript ──────────────────────────────────────────────────────────
-let _rec, _credentials, _speakerNames, _speakers;
+let _rec, _speakerNames, _speakers;
 
 async function openTranscript(recordingId) {
   showTranscript();
@@ -311,18 +323,17 @@ async function openTranscript(recordingId) {
   document.getElementById('tx-content').classList.add('hidden');
 
   try {
-    _credentials  = await getAWSCredentials(session.idToken);
-    _rec          = await getTranscriptJson(_credentials, `transcripts/${recordingId}.json`);
+    _rec          = await fetchTranscript(recordingId);
     _speakerNames = resolveSpeakerNames(_rec);
     _speakers     = sortedSpeakers(_rec.segments);
 
-    const label = _rec.label || _rec.meetingTitle || 'Untitled Interview';
+    const label = _rec.label || 'Untitled Interview';
     document.title = `${label} — MeetRecord`;
     document.getElementById('meta-title').textContent = label;
     document.getElementById('meta-row').innerHTML =
       [formatDateLong(_rec.date), formatDuration(_rec.duration),
-       `Recorded by ${esc(_rec.uploadedBy || _rec.userId || '—')}`]
-      .map(s => `<span>${s}</span>`).join('<span class="meta-sep">·</span>');
+       `Recorded by ${esc(_rec.uploadedBy || '—')}`]
+      .map(s => `<span>${s}</span>`).join('<span class="meta-sep">\u00b7</span>');
 
     if (_speakers.length > 0) {
       renderSpeakerEditor(_speakerNames, _speakers);
@@ -360,14 +371,13 @@ document.getElementById('save-labels-btn').addEventListener('click', async () =>
   statusEl.className = 'save-status hidden';
 
   try {
-    const updated = { ..._rec, speakerNames: newNames };
-    await putTranscriptJson(_credentials, _rec.recordingId, updated);
-    _rec          = updated;
-    _speakerNames = newNames;
+    await updateTranscript(_rec.recordingId, { speakerMap: newNames });
+    _rec.speakerMap = newNames;
+    _speakerNames   = newNames;
     renderTranscript(_rec, _speakerNames, _speakers);
-    statusEl.textContent = '✓ Saved';
+    statusEl.textContent = 'Labels saved \u2713';
     statusEl.className   = 'save-status save-ok';
-    setTimeout(() => { statusEl.className = 'save-status hidden'; }, 3000);
+    setTimeout(() => { statusEl.className = 'save-status hidden'; }, 2000);
   } catch (err) {
     statusEl.textContent = `Save failed: ${err.message}`;
     statusEl.className   = 'save-status save-err';
@@ -383,8 +393,8 @@ document.getElementById('copy-btn').addEventListener('click', async (e) => {
   try {
     await navigator.clipboard.writeText(text);
     const btn = e.currentTarget, orig = btn.innerHTML;
-    btn.textContent = '✓ Copied!';
-    setTimeout(() => { btn.innerHTML = orig; }, 2000);
+    btn.textContent = 'Copied! Paste into Claude or ChatGPT';
+    setTimeout(() => { btn.innerHTML = orig; }, 3000);
   } catch {
     prompt('Copy this text:', text);
   }
@@ -392,7 +402,7 @@ document.getElementById('copy-btn').addEventListener('click', async (e) => {
 
 // ─── Load recordings ──────────────────────────────────────────────────────────
 try {
-  allRecordings = await loadAllTranscripts(session.idToken);
+  allRecordings = await fetchRecordingsList();
   renderList();
 } catch (err) {
   const errEl = document.getElementById('error-msg');

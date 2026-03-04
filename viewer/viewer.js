@@ -20,6 +20,15 @@ const exportToolbar  = document.getElementById('export-toolbar');
 const btnExportPdf   = document.getElementById('btn-export-pdf');
 const btnExportTxt   = document.getElementById('btn-export-txt');
 const btnExportAudio = document.getElementById('btn-export-audio');
+const btnPrint       = document.getElementById('btn-print');
+const btnCopyAi      = document.getElementById('btn-copy-ai');
+const copyFeedback   = document.getElementById('copy-feedback');
+const btnEditSpeakers = document.getElementById('btn-edit-speakers');
+const speakerEditor  = document.getElementById('speaker-editor');
+const speakerFields  = document.getElementById('speaker-fields');
+const btnSpeakerSave = document.getElementById('btn-speaker-save');
+const btnSpeakerCancel = document.getElementById('btn-speaker-cancel');
+const speakerSaved   = document.getElementById('speaker-saved');
 
 // ─── State ────────────────────────────────────────────────────────────────────
 
@@ -173,6 +182,51 @@ async function applyRename(raw, newName, originBtn) {
     btn.textContent = newName;
   });
 }
+
+// ─── Bulk speaker editor ─────────────────────────────────────────────────────
+
+function openSpeakerEditor() {
+  speakerEditor.classList.remove('hidden');
+  speakerSaved.classList.add('hidden');
+
+  speakerFields.innerHTML = speakerOrder.map((raw) => {
+    const display = resolveSpeaker(raw);
+    const color = speakerColor(raw);
+    return `
+      <div class="speaker-field">
+        <span class="speaker-field-label" style="color: ${color}">${escapeHtml(raw)}</span>
+        <input type="text" class="speaker-field-input" data-raw="${escapeHtml(raw)}" value="${escapeHtml(display)}" />
+      </div>`;
+  }).join('');
+}
+
+function closeSpeakerEditor() {
+  speakerEditor.classList.add('hidden');
+}
+
+async function saveSpeakerLabels() {
+  if (!recording.speakerNames) recording.speakerNames = {};
+
+  const inputs = speakerFields.querySelectorAll('.speaker-field-input');
+  for (const input of inputs) {
+    const raw = input.dataset.raw;
+    const name = input.value.trim();
+    if (name) recording.speakerNames[raw] = name;
+  }
+
+  await updateRecording(recording.id, { speakerNames: recording.speakerNames });
+
+  // Re-render transcript in place (preserves scroll)
+  renderTranscript();
+
+  // Show confirmation
+  speakerSaved.classList.remove('hidden');
+  setTimeout(() => speakerSaved.classList.add('hidden'), 2000);
+}
+
+btnEditSpeakers.addEventListener('click', openSpeakerEditor);
+btnSpeakerCancel.addEventListener('click', closeSpeakerEditor);
+btnSpeakerSave.addEventListener('click', saveSpeakerLabels);
 
 // ─── Export ───────────────────────────────────────────────────────────────────
 
@@ -350,11 +404,82 @@ function exportAudio() {
   URL.revokeObjectURL(url);
 }
 
+// ── Copy for AI Analysis ──────────────────────────────────────────────────────
+
+function formatDurationHuman(ms) {
+  const totalMin = Math.round((ms ?? 0) / 60000);
+  if (totalMin < 60) return `${totalMin} minutes`;
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  return m > 0 ? `${h} hour${h > 1 ? 's' : ''} ${m} minutes` : `${h} hour${h > 1 ? 's' : ''}`;
+}
+
+function buildAiCopyText() {
+  const label = recording.label || recording.title || 'Untitled';
+  const date = formatTimestamp(recording.startTime);
+  const duration = formatDurationHuman(recording.duration);
+  const uploadedBy = recording.uploadedBy || recording.speakerNames?.['Speaker_A'] || 'Unknown';
+
+  const turns = groupIntoTurns(recording.segments);
+  const transcriptLines = turns.flatMap((turn) => {
+    const name = resolveSpeaker(turn.speaker);
+    return turn.segments.map((seg) => `[${formatTime(seg.start)}] ${name}: ${seg.text}`);
+  });
+
+  return [
+    'INTERVIEW TRANSCRIPT',
+    `Candidate: ${label}`,
+    `Date: ${date}`,
+    `Duration: ${duration}`,
+    `Recorded by: ${uploadedBy}`,
+    '',
+    'TRANSCRIPT:',
+    ...transcriptLines,
+    '',
+    '---',
+    'ANALYSIS REQUEST:',
+    'Please analyze this interview transcript and provide a structured evaluation:',
+    '1. CANDIDATE SCORE: Rate out of 10 with brief justification.',
+    '2. KEY STRENGTHS: 3-5 specific strengths demonstrated.',
+    '3. AREAS OF CONCERN: Red flags, gaps, or weaknesses.',
+    '4. CULTURE FIT: Communication style and cultural alignment.',
+    '5. HIRING RECOMMENDATION: Hire / Consider / Pass — with one-paragraph rationale.',
+  ].join('\n');
+}
+
+async function copyForAi() {
+  const text = buildAiCopyText();
+  await navigator.clipboard.writeText(text);
+  copyFeedback.classList.remove('hidden');
+  setTimeout(() => copyFeedback.classList.add('hidden'), 3000);
+}
+
+// ── Print ────────────────────────────────────────────────────────────────────
+
+function printTranscript() {
+  const printMeta = document.getElementById('print-meta');
+  const label = recording.label || recording.title || 'Untitled';
+  const date = formatTimestamp(recording.startTime);
+  const duration = formatDurationHuman(recording.duration);
+  const uploadedBy = recording.uploadedBy || 'Unknown';
+
+  printMeta.innerHTML = [
+    `<strong>Candidate:</strong> ${escapeHtml(label)}`,
+    `<strong>Date:</strong> ${escapeHtml(date)}`,
+    `<strong>Duration:</strong> ${escapeHtml(duration)}`,
+    `<strong>Recorded by:</strong> ${escapeHtml(uploadedBy)}`,
+  ].join('&nbsp;&nbsp;&middot;&nbsp;&nbsp;');
+
+  window.print();
+}
+
 // ── Button wiring ─────────────────────────────────────────────────────────────
 
 btnExportPdf.addEventListener('click', exportPdf);
 btnExportTxt.addEventListener('click', exportTxt);
 btnExportAudio.addEventListener('click', exportAudio);
+btnCopyAi.addEventListener('click', copyForAi);
+btnPrint.addEventListener('click', printTranscript);
 
 // ─── Loading / error states ───────────────────────────────────────────────────
 
@@ -403,11 +528,14 @@ async function init() {
     statusBadge.removeAttribute('hidden');
   }
 
-  // Show export toolbar; enable PDF+TXT only when a transcript exists.
+  // Show export toolbar; enable PDF+TXT+Copy only when a transcript exists.
   exportToolbar.removeAttribute('hidden');
   const hasTranscript = !!recording.segments?.length;
   btnExportPdf.disabled = !hasTranscript;
   btnExportTxt.disabled = !hasTranscript;
+  btnPrint.disabled = !hasTranscript;
+  btnCopyAi.disabled = !hasTranscript;
+  btnEditSpeakers.disabled = !hasTranscript;
   btnExportAudio.disabled = !recording.blob;
 
   if (hasTranscript) renderTranscript();

@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MeetRecord — Setup</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #f8fafc;
+      color: #1a1a1a;
+      font-family: system-ui, -apple-system, sans-serif;
+      font-size: 16px;
+      line-height: 1.6;
+      display: flex;
+      justify-content: center;
+      padding: 48px 24px;
+      min-height: 100vh;
+    }
+
+    .wizard {
+      max-width: 560px;
+      width: 100%;
+    }
+
+    /* ── Progress ──────────────────────────────────────────────────────── */
+    .progress {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      margin-bottom: 32px;
+    }
+    .progress-dot {
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      background: #d1d5db;
+      transition: background 0.2s;
+    }
+    .progress-dot.active  { background: #3b82f6; }
+    .progress-dot.done    { background: #22c55e; }
+    .progress-label {
+      font-size: 13px;
+      color: #6b7280;
+      margin-left: 12px;
+    }
+
+    /* ── Card ──────────────────────────────────────────────────────────── */
+    .card {
+      background: #fff;
+      border: 1px solid #e5e7eb;
+      border-radius: 12px;
+      padding: 40px 36px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    .logo-placeholder {
+      width: 180px; height: 48px;
+      background: #e5e7eb;
+      border-radius: 6px;
+      margin: 0 auto;
+    }
+
+    h1 { font-size: 22px; font-weight: 700; text-align: center; }
+    h2 { font-size: 18px; font-weight: 600; }
+    p  { color: #4b5563; font-size: 15px; }
+
+    /* ── Inputs ────────────────────────────────────────────────────────── */
+    label {
+      font-size: 13px;
+      font-weight: 600;
+      color: #374151;
+      display: block;
+      margin-bottom: 4px;
+    }
+    input[type="text"],
+    input[type="password"],
+    input[type="email"],
+    input[type="url"] {
+      width: 100%;
+      padding: 10px 12px;
+      font-size: 15px;
+      font-family: monospace;
+      border: 1px solid #d1d5db;
+      border-radius: 8px;
+      background: #f9fafb;
+      color: #1a1a1a;
+      transition: border-color 0.15s;
+    }
+    input:focus {
+      outline: none;
+      border-color: #3b82f6;
+    }
+    .field { display: flex; flex-direction: column; gap: 2px; }
+    .field-hint { font-size: 12px; color: #9ca3af; }
+
+    /* ── Buttons ───────────────────────────────────────────────────────── */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      border: none;
+      border-radius: 8px;
+      padding: 12px 24px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.15s;
+    }
+    .btn:hover { opacity: 0.9; }
+    .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+    .btn-primary { background: #111827; color: #fff; }
+    .btn-secondary { background: #e5e7eb; color: #374151; }
+    .btn-accent { background: #3b82f6; color: #fff; }
+
+    .btn-row {
+      display: flex;
+      gap: 12px;
+      justify-content: flex-end;
+      margin-top: 8px;
+    }
+
+    /* ── Status / feedback ─────────────────────────────────────────────── */
+    .status-ok {
+      display: flex; align-items: center; gap: 8px;
+      color: #16a34a; font-weight: 600; font-size: 15px;
+    }
+    .status-err {
+      color: #ef4444; font-size: 14px;
+    }
+    .error-msg {
+      color: #ef4444; font-size: 14px; min-height: 20px;
+    }
+
+    /* ── Done checklist ────────────────────────────────────────────────── */
+    .checklist {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .checklist li {
+      display: flex; align-items: center; gap: 10px;
+      font-size: 15px; color: #374151;
+    }
+    .check { color: #22c55e; font-size: 18px; font-weight: 700; }
+
+    /* ── Step visibility ───────────────────────────────────────────────── */
+    .step { display: none; }
+    .step.active { display: flex; flex-direction: column; gap: 20px; }
+  </style>
+</head>
+<body>
+  <div class="wizard">
+    <!-- Progress indicator -->
+    <div class="progress">
+      <div class="progress-dot active" data-step="0"></div>
+      <div class="progress-dot" data-step="1"></div>
+      <div class="progress-dot" data-step="2"></div>
+      <div class="progress-dot" data-step="3"></div>
+      <div class="progress-dot" data-step="4"></div>
+      <span class="progress-label" id="progress-label">Step 1 of 5</span>
+    </div>
+
+    <div class="card">
+
+      <!-- Step 1: Welcome -->
+      <div class="step active" id="step-0">
+        <div class="logo-placeholder"></div>
+        <h1>Welcome to MeetRecord</h1>
+        <p>Record your interviews automatically, get transcripts with speaker labels, and export them for AI analysis. This quick setup takes about a minute.</p>
+        <div class="btn-row" style="justify-content: center;">
+          <button class="btn btn-primary" id="btn-get-started">Get Started</button>
+        </div>
+      </div>
+
+      <!-- Step 2: Microphone Permission -->
+      <div class="step" id="step-1">
+        <h2>Microphone Access</h2>
+        <p>MeetRecord needs microphone access to record both sides of your interviews. Chrome will show a permission prompt — click <strong>Allow</strong>.</p>
+        <div id="mic-status"></div>
+        <button class="btn btn-accent" id="btn-grant-mic">Grant Microphone Access</button>
+        <div class="btn-row">
+          <button class="btn btn-secondary btn-back" data-back>Back</button>
+          <button class="btn btn-primary btn-next" id="btn-mic-next" disabled>Next</button>
+        </div>
+      </div>
+
+      <!-- Step 3: Configuration -->
+      <div class="step" id="step-2">
+        <h2>Configuration</h2>
+        <p>Enter the service details provided by your IT admin.</p>
+
+        <div class="field">
+          <label for="cfg-api-url">Backend API URL</label>
+          <input type="url" id="cfg-api-url" placeholder="https://api.yourcompany.com" />
+        </div>
+
+        <div class="field">
+          <label for="cfg-assemblyai-key">AssemblyAI API Key</label>
+          <input type="password" id="cfg-assemblyai-key" placeholder="Paste your API key" />
+          <span class="field-hint">Your IT admin should have provided these values</span>
+        </div>
+
+        <div class="error-msg" id="cfg-error"></div>
+
+        <div class="btn-row">
+          <button class="btn btn-secondary btn-back" data-back>Back</button>
+          <button class="btn btn-primary" id="btn-cfg-next">Next</button>
+        </div>
+      </div>
+
+      <!-- Step 4: Login -->
+      <div class="step" id="step-3">
+        <h2>Sign In</h2>
+        <p>Log in with your company credentials.</p>
+
+        <div class="field">
+          <label for="login-email">Email</label>
+          <input type="email" id="login-email" placeholder="you@company.com" autocomplete="email" />
+        </div>
+
+        <div class="field">
+          <label for="login-password">Password</label>
+          <input type="password" id="login-password" placeholder="Password" autocomplete="current-password" />
+        </div>
+
+        <div class="error-msg" id="login-error"></div>
+        <div id="login-welcome" class="status-ok" style="display:none;"></div>
+
+        <div class="btn-row">
+          <button class="btn btn-secondary btn-back" data-back>Back</button>
+          <button class="btn btn-primary" id="btn-sign-in">Sign In</button>
+          <button class="btn btn-primary" id="btn-login-next" style="display:none;">Next</button>
+        </div>
+      </div>
+
+      <!-- Step 5: Done -->
+      <div class="step" id="step-4">
+        <h1 id="done-heading">You're all set!</h1>
+        <ul class="checklist">
+          <li><span class="check">&#10003;</span> Microphone access granted</li>
+          <li><span class="check">&#10003;</span> Configuration saved</li>
+          <li><span class="check">&#10003;</span> Logged in</li>
+        </ul>
+        <p>Click the <strong>MeetRecord</strong> icon in your Chrome toolbar to start recording interviews.</p>
+        <div class="btn-row" style="justify-content: center;">
+          <button class="btn btn-primary" id="btn-close">Start Recording</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <script src="onboarding.js" type="module"></script>
+</body>
+</html>

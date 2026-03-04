@@ -13,8 +13,8 @@ import {
   fetchTranscriptResult,
   parseUtterances,
 } from './transcription/assemblyai-client.js';
-import { uploadRecordingToS3 } from './aws/s3-uploader.js';
-import { getSession } from './auth/cognito-client.js';
+import { uploadRecordingToS3 } from './aws/upload-client.js';
+import { getSession } from './auth/backend-auth.js';
 
 // ─── State ────────────────────────────────────────────────────────────────────
 
@@ -67,7 +67,7 @@ async function closeRecorderTab() {
 
 // ─── Recording Control ────────────────────────────────────────────────────────
 
-async function startRecording({ tabId, captureMic = false }) {
+async function startRecording({ tabId, captureMic = false, selectedMicDeviceId = '' }) {
   if (state.recording) {
     return { success: false, error: 'Already recording' };
   }
@@ -89,6 +89,7 @@ async function startRecording({ tabId, captureMic = false }) {
       type: 'OFFSCREEN_START_RECORDING',
       streamId: captureStreamId,
       captureMic,
+      selectedMicDeviceId,
     });
 
     if (!response?.success) {
@@ -187,6 +188,17 @@ function serializeState() {
   };
 }
 
+// ─── Session guard ────────────────────────────────────────────────────────────
+
+async function requireSessionOrBroadcast() {
+  const session = await getSession();
+  if (!session) {
+    chrome.runtime.sendMessage({ type: 'AUTH_REQUIRED' }).catch(() => {});
+    throw new Error('Session expired');
+  }
+  return session;
+}
+
 // ─── Transcription Pipeline ───────────────────────────────────────────────────
 
 const POLL_ALARM = 'transcription-poll';
@@ -200,6 +212,8 @@ const POLL_ALARM = 'transcription-poll';
  * @param {string}      mimeType     e.g. 'video/webm;codecs=opus'
  */
 async function triggerTranscription(recordingId, audioBuffer, mimeType) {
+  await requireSessionOrBroadcast();
+
   const { assemblyAiApiKey: apiKey, speakersExpected } = await chrome.storage.local.get({
     assemblyAiApiKey: '',
     speakersExpected: 2,
@@ -240,14 +254,13 @@ async function triggerTranscription(recordingId, audioBuffer, mimeType) {
  */
 async function registerPendingTranscription(transcriptId, recordingId) {
   const { pendingTranscriptions = {} } = await chrome.storage.session.get('pendingTranscriptions');
-  pendingTranscriptions[transcriptId] = { recordingId, submittedAt: Date.now() };
+  pendingTranscriptions[transcriptId] = { recordingId, submittedAt: Date.now(), pollCount: 0 };
   await chrome.storage.session.set({ pendingTranscriptions });
 
   // Only create the alarm if it doesn't already exist
   const existing = await chrome.alarms.get(POLL_ALARM);
   if (!existing) {
-    // 1-minute interval is the production minimum; works at lower values in development
-    chrome.alarms.create(POLL_ALARM, { periodInMinutes: 0.25 });
+    chrome.alarms.create(POLL_ALARM, { periodInMinutes: 0.5 });
   }
 }
 
@@ -282,6 +295,19 @@ async function pollPendingTranscriptions() {
   let changed = false;
 
   for (const [transcriptId, job] of Object.entries(pendingTranscriptions)) {
+    // Max poll count: 40 polls × 30s = ~20 minutes
+    job.pollCount = (job.pollCount ?? 0) + 1;
+    changed = true;
+
+    if (job.pollCount >= 40) {
+      await updateRecording(job.recordingId, {
+        status: 'transcription_timeout',
+        transcriptionError: 'Timed out after ~20 minutes of polling',
+      });
+      delete pendingTranscriptions[transcriptId];
+      continue;
+    }
+
     try {
       const result = await fetchTranscriptResult(transcriptId, apiKey);
 
@@ -333,38 +359,17 @@ async function pollPendingTranscriptions() {
 // ─── S3 Upload ────────────────────────────────────────────────────────────────
 
 /**
- * Upload a completed recording's audio and transcript to S3.
+ * Upload a completed recording's audio and transcript to S3 via pre-signed URLs.
  * Called automatically after transcription reaches "completed".
- * Updates IndexedDB status: uploading → uploaded (or upload_failed).
+ * uploadRecordingToS3 handles session check, IndexedDB loading, status updates,
+ * and UPLOAD_PROGRESS broadcasts internally.
  *
  * @param {string} recordingId  IndexedDB record key.
  */
 async function triggerS3Upload(recordingId) {
-  const session = await getSession();
-  if (!session) {
-    console.warn('[BG] No active session — skipping S3 upload for', recordingId);
-    return;
-  }
-
-  const recording = await getRecording(recordingId);
-  if (!recording?.blob) {
-    console.warn('[BG] No blob found — skipping S3 upload for', recordingId);
-    return;
-  }
-
   try {
-    await updateRecording(recordingId, { status: 'uploading' });
-
-    const { audioUrl, transcriptUrl } = await uploadRecordingToS3(recording, session.username);
-
-    await updateRecording(recordingId, {
-      status:          'uploaded',
-      s3AudioUrl:      audioUrl,
-      s3TranscriptUrl: transcriptUrl,
-      uploadedBy:      session.username,
-      uploadedAt:      Date.now(),
-    });
-
+    await requireSessionOrBroadcast();
+    await uploadRecordingToS3(recordingId);
     chrome.notifications.create({
       type: 'basic',
       iconUrl: 'icons/icon48.png',
@@ -373,10 +378,6 @@ async function triggerS3Upload(recordingId) {
     });
   } catch (err) {
     console.error('[BG] S3 upload failed for', recordingId, err);
-    await updateRecording(recordingId, {
-      status:      'upload_failed',
-      uploadError: err.message,
-    });
   }
 }
 
@@ -401,7 +402,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   if (type === 'START_RECORDING') {
     const tabId = message.tabId || sender.tab?.id;
-    startRecording({ tabId, captureMic: message.captureMic }).then(sendResponse);
+    startRecording({
+      tabId,
+      captureMic: message.captureMic,
+      selectedMicDeviceId: message.selectedMicDeviceId,
+    }).then(sendResponse);
     return true;
   }
 
@@ -474,12 +479,9 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
 // ─── First-run mic setup ──────────────────────────────────────────────────────
 
 chrome.runtime.onInstalled.addListener(({ reason }) => {
-  if (reason !== 'install') return;
-  chrome.storage.local.get({ micPermissionGranted: false }, ({ micPermissionGranted }) => {
-    if (!micPermissionGranted) {
-      chrome.tabs.create({ url: chrome.runtime.getURL('micsetup.html'), active: true });
-    }
-  });
+  if (reason === 'install') {
+    chrome.tabs.create({ url: chrome.runtime.getURL('onboarding/onboarding.html'), active: true });
+  }
 });
 
 // ─── Startup — restore state after SW restart ─────────────────────────────────

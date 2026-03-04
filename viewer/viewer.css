@@ -172,6 +172,18 @@ html, body {
 }
 .export-btn:hover:not(:disabled) { border-color: var(--c-accent); color: var(--c-accent); }
 .export-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.export-btn.accent { background: var(--c-accent); color: #fff; border-color: var(--c-accent); }
+.export-btn.accent:hover:not(:disabled) { background: #2563eb; color: #fff; }
+
+.export-separator { width: 1px; height: 20px; background: var(--c-border); margin: 0 4px; }
+
+.copy-feedback {
+  font-size: 12px;
+  color: var(--c-success);
+  font-weight: 500;
+  white-space: nowrap;
+}
+.copy-feedback.hidden { display: none; }
 
 /* ── Main content ────────────────────────────────────────────────────────────── */
 #transcript-container {
@@ -209,6 +221,77 @@ html, body {
   animation: spin 0.7s linear infinite;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── Speaker editor panel ────────────────────────────────────────────────────── */
+.speaker-editor {
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius);
+  padding: 20px 24px;
+  margin-bottom: 24px;
+  box-shadow: var(--shadow);
+}
+.speaker-editor.hidden { display: none; }
+
+.speaker-editor-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.speaker-editor-title {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.speaker-editor-saved {
+  font-size: 12px;
+  color: var(--c-success);
+  font-weight: 500;
+}
+.speaker-editor-saved.hidden { display: none; }
+
+.speaker-editor-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.speaker-field {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.speaker-field-label {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  min-width: 100px;
+  flex-shrink: 0;
+}
+
+.speaker-field-input {
+  flex: 1;
+  max-width: 280px;
+  background: #f8fafc;
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-sm);
+  color: var(--c-text);
+  font-size: 14px;
+  padding: 7px 10px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.speaker-field-input:focus { border-color: var(--c-accent); }
+
+.speaker-editor-actions {
+  display: flex;
+  gap: 8px;
+}
 
 /* ── Transcript body ─────────────────────────────────────────────────────────── */
 #transcript-body {
@@ -294,7 +377,104 @@ html, body {
 }
 
 
+/* ── Print-only header (hidden on screen) ────────────────────────────────────── */
+.print-header { display: none; }
+
 /* ── Scrollbar ───────────────────────────────────────────────────────────────── */
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--c-border); border-radius: 3px; }
+
+/* ── Print styles ────────────────────────────────────────────────────────────── */
+@media print {
+  *, *::before, *::after { color-adjust: exact; -webkit-print-color-adjust: exact; }
+
+  html, body {
+    background: #fff;
+    color: #000;
+    font-size: 11pt;
+    line-height: 1.6;
+    height: auto;
+  }
+
+  .app { min-height: auto; }
+
+  /* Hide screen-only chrome */
+  .viewer-header,
+  .export-toolbar,
+  .speaker-editor,
+  .center-message,
+  .speaker-label::after { display: none !important; }
+
+  /* Show print header */
+  .print-header {
+    display: block !important;
+    padding: 0 0 8pt;
+  }
+
+  .print-header-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .print-title {
+    font-size: 14pt;
+    font-weight: 700;
+    color: #1e293b;
+  }
+
+  .print-logo-placeholder {
+    width: 120px;
+    height: 40px;
+    background: #e2e8f0;
+    border-radius: 4px;
+  }
+
+  .print-meta {
+    margin-top: 6pt;
+    font-size: 10pt;
+    color: #475569;
+    line-height: 1.5;
+  }
+
+  .print-rule {
+    border: none;
+    border-top: 1px solid #cbd5e1;
+    margin: 10pt 0;
+  }
+
+  /* Transcript container */
+  #transcript-container {
+    max-width: 100%;
+    padding: 0;
+    margin: 0;
+  }
+
+  /* Turns and segments */
+  .turn { break-inside: avoid-page; }
+
+  .segment {
+    padding: 2pt 0;
+    break-inside: avoid;
+  }
+  .segment:hover { background: none; }
+
+  .segment-time {
+    font-size: 9pt;
+    color: #64748b;
+  }
+
+  .segment-text {
+    font-size: 11pt;
+    color: #000;
+  }
+
+  .speaker-label {
+    font-size: 10pt;
+    cursor: default;
+  }
+
+  /* Hide scrollbar artifacts */
+  ::-webkit-scrollbar { display: none; }
+}

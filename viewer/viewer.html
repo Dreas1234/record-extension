@@ -30,8 +30,23 @@
     <div class="export-toolbar" id="export-toolbar" hidden>
       <span class="export-label">Export:</span>
       <button class="export-btn" id="btn-export-pdf" disabled>&#8659; PDF</button>
+      <button class="export-btn" id="btn-print" disabled>&#9113; Print</button>
       <button class="export-btn" id="btn-export-txt" disabled>&#8659; TXT</button>
       <button class="export-btn" id="btn-export-audio">&#8659; Audio</button>
+      <span class="export-separator"></span>
+      <button class="export-btn" id="btn-edit-speakers" disabled>Edit Speaker Names</button>
+      <button class="export-btn accent" id="btn-copy-ai" disabled>Copy for AI Analysis</button>
+      <span class="copy-feedback hidden" id="copy-feedback">Copied! Paste into Claude or ChatGPT</span>
+    </div>
+
+    <!-- Print-only header (hidden on screen, shown when printing) -->
+    <div class="print-header" id="print-header">
+      <div class="print-header-row">
+        <div class="print-title">MeetRecord — Interview Transcript</div>
+        <div class="print-logo-placeholder"></div>
+      </div>
+      <div class="print-meta" id="print-meta"></div>
+      <hr class="print-rule" />
     </div>
 
     <main id="transcript-container">
@@ -39,6 +54,21 @@
       <div id="error-state" class="center-message" hidden>
         <span class="error-icon">&#9888;</span>
         <span id="error-text"></span>
+      </div>
+
+      <!-- Speaker label editor — toggled by button -->
+      <div class="speaker-editor hidden" id="speaker-editor">
+        <div class="speaker-editor-header">
+          <h3 class="speaker-editor-title">Edit Speaker Names</h3>
+          <span class="speaker-editor-saved hidden" id="speaker-saved">Labels saved &#10003;</span>
+        </div>
+        <div class="speaker-editor-fields" id="speaker-fields">
+          <!-- One input per speaker, populated by JS -->
+        </div>
+        <div class="speaker-editor-actions">
+          <button class="export-btn" id="btn-speaker-cancel">Cancel</button>
+          <button class="export-btn accent" id="btn-speaker-save">Save Labels</button>
+        </div>
       </div>
 
       <div id="transcript-body" hidden></div>

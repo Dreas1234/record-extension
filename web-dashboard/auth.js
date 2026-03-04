@@ -1,101 +1,78 @@
 /**
  * web-dashboard/auth.js
- * Cognito USER_PASSWORD_AUTH flow for the standalone web dashboard.
- * Uses localStorage (no Chrome extension APIs).
+ * Authentication via backend API. Session stored in sessionStorage.
  */
 
-import { CONFIG } from './config.js';
+import CONFIG from './config.js';
 
-const SESSION_KEY = 'mr_session';
+const SESSION_KEY = 'meetrecord_session';
 
-// ─── Internal helpers ─────────────────────────────────────────────────────────
-
-async function cognitoPost(target, body) {
-  const resp = await fetch(`https://cognito-idp.${CONFIG.AWS_REGION}.amazonaws.com/`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/x-amz-json-1.1',
-      'X-Amz-Target': `AmazonCognitoIdentityProviderService.${target}`,
-    },
-    body: JSON.stringify({ ...body, ClientId: CONFIG.COGNITO_CLIENT_ID }),
-  });
-  const data = await resp.json().catch(() => ({}));
-  if (!resp.ok) throw new Error(data.message || data.__type || `Auth error ${resp.status}`);
-  return data;
-}
-
-function decodeJwt(token) {
+/**
+ * Authenticate against the backend API.
+ * @param {string} username
+ * @param {string} password
+ * @returns {Promise<{ token, expiresAt, userId, displayName }>}
+ */
+export async function signIn(username, password) {
+  let resp;
   try {
-    return JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
+    resp = await fetch(`${CONFIG.apiBaseUrl}/auth/token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password }),
+    });
   } catch {
-    return {};
+    throw new Error('Cannot reach the server. Check your connection.');
   }
-}
 
-function sessionFromResult(result, email, existing = {}) {
-  const { IdToken, AccessToken, RefreshToken, ExpiresIn } = result;
-  const p = decodeJwt(IdToken);
-  return {
-    idToken:      IdToken,
-    accessToken:  AccessToken,
-    refreshToken: RefreshToken ?? existing.refreshToken ?? null,
-    expiry:       Date.now() + ExpiresIn * 1000,
-    username:     p['cognito:username'] || p.sub || email || existing.username || '',
-    displayName:  p.name || p.given_name || p['cognito:username'] || p.email || email || existing.displayName || '',
+  if (resp.status === 401) {
+    throw new Error('Invalid email or password.');
+  }
+
+  if (!resp.ok) {
+    const text = await resp.text().catch(() => '');
+    throw new Error(text || `Sign-in failed (${resp.status})`);
+  }
+
+  const data = await resp.json();
+  const session = {
+    token: data.token,
+    expiresAt: data.expiresAt,
+    userId: data.userId,
+    displayName: data.displayName,
   };
-}
-
-// ─── Public API ───────────────────────────────────────────────────────────────
-
-export async function signIn(email, password) {
-  const data = await cognitoPost('InitiateAuth', {
-    AuthFlow: 'USER_PASSWORD_AUTH',
-    AuthParameters: { USERNAME: email, PASSWORD: password },
-  });
-  const session = sessionFromResult(data.AuthenticationResult, email);
-  localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+  sessionStorage.setItem(SESSION_KEY, JSON.stringify(session));
   return session;
 }
 
+/** Clear session. */
 export function signOut() {
-  localStorage.removeItem(SESSION_KEY);
+  sessionStorage.removeItem(SESSION_KEY);
 }
 
 /**
- * Returns the active session, auto-refreshing if the token is close to expiry.
- * Returns null if the user is not logged in or the session cannot be refreshed.
+ * Return the current session if valid, or null.
+ * Async so callers can use .then() or await uniformly.
  */
 export async function getSession() {
-  const raw = localStorage.getItem(SESSION_KEY);
+  const raw = sessionStorage.getItem(SESSION_KEY);
   if (!raw) return null;
-
-  let session;
-  try { session = JSON.parse(raw); } catch { return null; }
-  if (!session?.idToken) return null;
-
-  // Still fresh (5-minute buffer)
-  if (session.expiry > Date.now() + 5 * 60 * 1000) return session;
-
-  // Attempt token refresh
-  if (session.refreshToken) {
-    try {
-      const data = await cognitoPost('InitiateAuth', {
-        AuthFlow: 'REFRESH_TOKEN_AUTH',
-        AuthParameters: { REFRESH_TOKEN: session.refreshToken },
-      });
-      const refreshed = sessionFromResult(data.AuthenticationResult, session.username, session);
-      localStorage.setItem(SESSION_KEY, JSON.stringify(refreshed));
-      return refreshed;
-    } catch {
-      // Refresh failed — fall through to signOut
+  try {
+    const session = JSON.parse(raw);
+    if (!session.token || !session.expiresAt || session.expiresAt < Date.now()) {
+      signOut();
+      return null;
     }
+    return session;
+  } catch {
+    signOut();
+    return null;
   }
-
-  signOut();
-  return null;
 }
 
-/** Redirect to index.html if not logged in. Call at the top of protected pages. */
+/**
+ * Auth guard — returns session or redirects to login.
+ */
 export async function requireAuth() {
   const session = await getSession();
   if (!session) {
@@ -103,4 +80,36 @@ export async function requireAuth() {
     return null;
   }
   return session;
+}
+
+/**
+ * Authenticated fetch wrapper. Adds Bearer token and handles 401/403.
+ * @param {string} path  API path (e.g. '/recordings/list')
+ * @param {RequestInit} [options]
+ * @returns {Promise<Response>}
+ */
+export async function apiFetch(path, options = {}) {
+  const session = await getSession();
+  if (!session) {
+    signOut();
+    location.href = 'index.html';
+    throw new Error('Not authenticated');
+  }
+
+  const resp = await fetch(`${CONFIG.apiBaseUrl}${path}`, {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${session.token}`,
+      ...options.headers,
+    },
+  });
+
+  if (resp.status === 401 || resp.status === 403) {
+    signOut();
+    location.href = 'index.html';
+    throw new Error('Session expired');
+  }
+
+  return resp;
 }

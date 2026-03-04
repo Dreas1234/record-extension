@@ -47,6 +47,28 @@ export function detectPlatformFromDom() {
 }
 
 /**
+ * Extract meeting title from the current page's DOM (called from content scripts).
+ * @param {string|null} platform  Result of detectPlatformFromUrl or detectPlatformFromDom.
+ * @returns {string}
+ */
+export function getMeetingTitle(platform) {
+  if (platform === PLATFORMS.GOOGLE_MEET) {
+    return document.querySelector('[data-meeting-title]')?.textContent?.trim()
+      ?? document.querySelector('meta[property="og:title"]')?.content?.trim()
+      ?? document.title;
+  }
+  if (platform === PLATFORMS.ZOOM) {
+    return document.querySelector('.meeting-title')?.textContent?.trim()
+      ?? document.title;
+  }
+  if (platform === PLATFORMS.TEAMS) {
+    return document.querySelector('[data-tid="meeting-title"]')?.textContent?.trim()
+      ?? document.title;
+  }
+  return 'Meeting — ' + new Date().toLocaleTimeString();
+}
+
+/**
  * Human-readable platform name.
  * @param {string|null} platform
  * @returns {string}
@@ -57,5 +79,5 @@ export function getPlatformLabel(platform) {
     [PLATFORMS.ZOOM]: 'Zoom',
     [PLATFORMS.TEAMS]: 'Microsoft Teams',
   };
-  return labels[platform] ?? 'Unknown Platform';
+  return labels[platform] ?? ('Meeting — ' + new Date().toLocaleTimeString());
 }

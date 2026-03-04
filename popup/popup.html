@@ -23,34 +23,14 @@
     </header>
 
     <div class="settings-panel" id="settings-panel">
+      <label class="settings-label" for="input-api-url">Backend API URL</label>
+      <div class="settings-row">
+        <input type="url" id="input-api-url" class="settings-input" placeholder="https://api.yourcompany.com" autocomplete="off" spellcheck="false" />
+      </div>
+
       <label class="settings-label" for="input-api-key">AssemblyAI API Key</label>
       <div class="settings-row">
         <input type="password" id="input-api-key" class="settings-input" placeholder="Paste your API key…" autocomplete="off" spellcheck="false" />
-      </div>
-
-      <label class="settings-label" for="input-s3-bucket">S3 Bucket Name</label>
-      <div class="settings-row">
-        <input type="text" id="input-s3-bucket" class="settings-input" placeholder="my-meetrecord-bucket" autocomplete="off" spellcheck="false" />
-      </div>
-
-      <label class="settings-label" for="input-aws-region">AWS Region</label>
-      <div class="settings-row">
-        <input type="text" id="input-aws-region" class="settings-input" placeholder="us-east-1" autocomplete="off" spellcheck="false" />
-      </div>
-
-      <label class="settings-label" for="input-user-pool-id">Cognito User Pool ID</label>
-      <div class="settings-row">
-        <input type="text" id="input-user-pool-id" class="settings-input" placeholder="us-east-1_XXXXXXXXX" autocomplete="off" spellcheck="false" />
-      </div>
-
-      <label class="settings-label" for="input-identity-pool-id">Cognito Identity Pool ID</label>
-      <div class="settings-row">
-        <input type="text" id="input-identity-pool-id" class="settings-input" placeholder="us-east-1:xxxxxxxx-xxxx-…" autocomplete="off" spellcheck="false" />
-      </div>
-
-      <label class="settings-label" for="input-client-id">Cognito App Client ID</label>
-      <div class="settings-row">
-        <input type="text" id="input-client-id" class="settings-input" placeholder="xxxxxxxxxxxxxxxxxxxxxxxxxx" autocomplete="off" spellcheck="false" />
       </div>
 
       <div class="settings-row">
@@ -59,8 +39,15 @@
       <p class="settings-hint" id="settings-hint"></p>
     </div>
 
+    <!-- Setup required — shown when backend API not configured -->
+    <div class="setup-required hidden" id="setup-required">
+      <p class="login-hint">Setup required</p>
+      <p class="setup-detail">Complete the onboarding wizard to configure MeetRecord before signing in.</p>
+      <button class="btn btn-primary" id="btn-open-onboarding">Open Setup Wizard</button>
+    </div>
+
     <!-- Login view — shown when not authenticated -->
-    <div class="login-view" id="login-view">
+    <div class="login-view hidden" id="login-view">
       <p class="login-hint">Sign in to start recording</p>
       <input type="email" id="input-email" class="settings-input"
              placeholder="Work email" autocomplete="email" />
@@ -81,11 +68,26 @@
         <div class="timer" id="timer" hidden>00:00:00</div>
       </div>
 
+      <div class="mic-selector">
+        <label class="settings-label" for="mic-select">Microphone</label>
+        <div class="mic-selector-row">
+          <select id="mic-select" class="mic-dropdown">
+            <option value="">Default</option>
+          </select>
+          <button class="btn-icon-sm" id="btn-refresh-mics" title="Refresh devices">&#8635;</button>
+        </div>
+      </div>
+
       <div class="controls">
         <button class="btn btn-primary" id="btn-record">
           <span class="btn-icon">&#9654;</span>
           <span id="btn-record-label">Start Recording</span>
         </button>
+      </div>
+
+      <div class="silence-warning hidden" id="silence-warning">
+        <span class="silence-warning-text">&#9888; No audio detected from your microphone. Is the right input selected?</span>
+        <button class="btn-link silence-dismiss" id="btn-dismiss-silence">Dismiss</button>
       </div>
 
       <section class="recordings-section">

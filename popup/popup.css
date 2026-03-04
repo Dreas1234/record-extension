@@ -133,6 +133,21 @@ body {
 .settings-hint.ok  { color: #16a34a; }
 .settings-hint.err { color: var(--c-danger); }
 
+/* ── Setup required view ─────────────────────────────────────────────────────── */
+.setup-required {
+  padding: 20px 16px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: center;
+}
+.setup-detail {
+  font-size: 13px;
+  color: var(--c-muted);
+  text-align: center;
+  line-height: 1.5;
+}
+
 /* ── Login view ──────────────────────────────────────────────────────────────── */
 .login-view {
   padding: 20px 16px 24px;
@@ -196,6 +211,66 @@ main { padding: 14px 16px; display: flex; flex-direction: column; gap: 14px; }
   font-variant-numeric: tabular-nums;
   letter-spacing: 2px;
   color: var(--c-danger);
+}
+
+/* ── Mic selector ────────────────────────────────────────────────────────────── */
+.mic-selector { display: flex; flex-direction: column; gap: 4px; }
+
+.mic-selector-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.mic-dropdown {
+  flex: 1;
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-sm);
+  color: var(--c-text);
+  font-size: 13px;
+  padding: 7px 10px;
+  min-width: 0;
+  cursor: pointer;
+}
+.mic-dropdown:focus {
+  outline: none;
+  border-color: var(--c-accent);
+}
+
+.btn-icon-sm {
+  background: none;
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-sm);
+  color: var(--c-muted);
+  font-size: 16px;
+  padding: 5px 8px;
+  cursor: pointer;
+  line-height: 1;
+  transition: color 0.15s, border-color 0.15s;
+}
+.btn-icon-sm:hover { color: var(--c-text); border-color: var(--c-text); }
+
+/* ── Silence warning ─────────────────────────────────────────────────────────── */
+.silence-warning {
+  background: #fef3c7;
+  border: 1px solid #f59e0b;
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.silence-warning-text {
+  flex: 1;
+  font-size: 12px;
+  color: #92400e;
+  line-height: 1.4;
+}
+.silence-dismiss {
+  font-size: 11px;
+  white-space: nowrap;
+  color: #92400e;
 }
 
 /* ── Controls ────────────────────────────────────────────────────────────────── */
@@ -278,6 +353,17 @@ main { padding: 14px 16px; display: flex; flex-direction: column; gap: 14px; }
 }
 
 .recording-item-meta { font-size: 11px; color: var(--c-muted); line-height: 1; }
+
+.recording-upload-status:empty { display: none; }
+
+.upload-status {
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1;
+}
+.upload-status.uploading { color: var(--c-accent); }
+.upload-status.uploaded  { color: #16a34a; }
+.upload-status.failed    { color: var(--c-danger); }
 
 .recording-item-actions { display: flex; gap: 4px; }
 
