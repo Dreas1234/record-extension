@@ -19,7 +19,13 @@ const AUTH_MODE        = process.env.AUTH_MODE || 'simple';
 const AUTH_TOKEN_SECRET = process.env.AUTH_TOKEN_SECRET || 'change-me';
 const TOKEN_EXPIRY     = '24h';
 
-const s3 = new S3Client({ region: process.env.AWS_REGION || 'eu-north-1' });
+const s3 = new S3Client({
+  region: process.env.AWS_REGION || 'eu-north-1',
+  credentials: {
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+  },
+});
 
 const app = express();
 app.use(cors());

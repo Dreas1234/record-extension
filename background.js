@@ -415,6 +415,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
+  if (type === 'RETRY_UPLOAD') {
+    triggerS3Upload(message.recordingId).then(() => sendResponse({ success: true }))
+      .catch((err) => sendResponse({ success: false, error: err.message }));
+    return true;
+  }
+
   if (type === 'MEETING_DETECTED') {
     handleMeetingDetected(sender.tab, message);
     return false;

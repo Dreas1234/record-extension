@@ -28,7 +28,11 @@ function broadcast(recordingId, status) {
 async function putWithRetry(url, body, headers) {
   try {
     const resp = await fetch(url, { method: 'PUT', body, headers });
-    if (!resp.ok) throw new Error(`Upload failed (${resp.status})`);
+    if (!resp.ok) {
+      const text = await resp.text().catch(() => '');
+      console.error('[upload-client] S3 PUT error:', resp.status, text);
+      throw new Error(`Upload failed (${resp.status}): ${text}`);
+    }
     return resp;
   } catch (err) {
     if (err instanceof TypeError) {

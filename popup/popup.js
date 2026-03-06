@@ -137,13 +137,23 @@ recordingsList.addEventListener('click', async (e) => {
   }
 });
 
+recordingsList.addEventListener('click', async (e) => {
+  const retryBtn = e.target.closest('.retry-upload');
+  if (!retryBtn) return;
+  const statusEl = retryBtn.closest('.recording-upload-status');
+  const recordingId = statusEl?.dataset?.statusId;
+  if (!recordingId) return;
+  statusEl.innerHTML = formatUploadStatus('uploading');
+  sendBg('RETRY_UPLOAD', { recordingId });
+});
+
 // ─── Upload status ────────────────────────────────────────────────────────────
 
 function formatUploadStatus(status) {
   switch (status) {
     case 'uploading':    return '<span class="upload-status uploading">Uploading…</span>';
     case 'uploaded':     return '<span class="upload-status uploaded">Uploaded &#10003;</span>';
-    case 'upload_failed': return '<span class="upload-status failed">Upload failed — check connection</span>';
+    case 'upload_failed': return '<span class="upload-status failed">Upload failed <button class="btn-link retry-upload">Retry</button></span>';
     case 'transcribed':  return '<span class="upload-status uploading">Preparing upload…</span>';
     case 'processing':   return '<span class="upload-status uploading">Transcribing…</span>';
     default:             return '';
